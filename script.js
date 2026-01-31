@@ -26,17 +26,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
-    // Initialize game if not already initialized
+    // Initialize game
     if (typeof initGame === 'function') {
         setTimeout(() => {
             if (!window.gameInitialized) {
                 initGame();
                 window.gameInitialized = true;
             }
-        }, 100);
+        }, 500);
     }
     
-    // Initialize Web3 and check connection
+    // Initialize blockchain connection
     initializeBlockchain();
     
     // Initialize charts if Chart.js is loaded
@@ -49,29 +49,47 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Setup auto-fill for recipient address
     setupRecipientAutoFill();
-    
-    // Show connection status
-    showConnectionStatus();
 });
 
 // Initialize blockchain connection
 async function initializeBlockchain() {
     console.log('Initializing blockchain connection...');
     
-    // First try to initialize Web3 with existing connection
+    // Check if MetaMask is installed
+    if (typeof window.ethereum === 'undefined') {
+        console.log('MetaMask not detected');
+        showNotification('Please install MetaMask to connect wallet', 'warning');
+        return;
+    }
+    
+    // Try to initialize Web3 with existing connection
     if (typeof initWeb3 === 'function') {
         const initialized = await initWeb3();
         if (initialized) {
             console.log('Web3 initialized with existing connection');
             updateConnectionUI();
+        } else {
+            console.log('No existing wallet connection found');
         }
     }
     
-    // Then check for any connection issues
-    if (typeof checkAndFixConnection === 'function') {
-        setTimeout(async () => {
-            await checkAndFixConnection();
-        }, 1000);
+    // Set up click handler for wallet status
+    const walletStatus = document.querySelector('.wallet-status');
+    if (walletStatus) {
+        walletStatus.addEventListener('click', function() {
+            if (window.connected) {
+                // Show MTK panel
+                const panel = document.getElementById('mtkTokenPanel');
+                if (panel) {
+                    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+                }
+            } else {
+                // Connect wallet
+                if (typeof connectWallet === 'function') {
+                    connectWallet();
+                }
+            }
+        });
     }
     
     // Set up periodic connection checking
@@ -109,17 +127,10 @@ function updateConnectionUI() {
         if (typeof formatAddress === 'function') {
             updateElement('accountAddress', formatAddress(window.userAccount));
         }
-    }
-}
-
-// Show connection status
-async function showConnectionStatus() {
-    if (typeof verifyConnection === 'function') {
-        const status = await verifyConnection();
-        console.log('Current connection status:', status);
         
-        if (!status.connected) {
-            console.log('No active wallet connection detected');
+        // Update balances
+        if (typeof updateBalances === 'function') {
+            updateBalances();
         }
     }
 }
@@ -310,16 +321,6 @@ function addMTKTokenPanel() {
             panel.style.display = 'block';
         }
     }, 5000);
-    
-    // Toggle panel when clicking wallet status
-    document.addEventListener('click', function(e) {
-        if (e.target.closest('.wallet-status')) {
-            const panel = document.getElementById('mtkTokenPanel');
-            if (panel) {
-                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-            }
-        }
-    });
 }
 
 // Setup auto-fill for recipient address
