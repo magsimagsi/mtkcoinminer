@@ -36,8 +36,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 100);
     }
     
-    // Check for existing wallet connection
-    checkExistingConnection();
+    // Initialize Web3 and check connection
+    initializeBlockchain();
     
     // Initialize charts if Chart.js is loaded
     if (typeof Chart !== 'undefined') {
@@ -47,21 +47,79 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add MTK token info panel
     addMTKTokenPanel();
     
-    // Auto-fill recipient address when wallet connects
+    // Setup auto-fill for recipient address
     setupRecipientAutoFill();
+    
+    // Show connection status
+    showConnectionStatus();
 });
 
-// Check existing wallet connection
-async function checkExistingConnection() {
-    if (typeof window.ethereum !== 'undefined') {
-        try {
-            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-            if (accounts.length > 0 && typeof connectWallet === 'function') {
-                // Auto-connect if previously connected
-                setTimeout(() => connectWallet(), 1000);
+// Initialize blockchain connection
+async function initializeBlockchain() {
+    console.log('Initializing blockchain connection...');
+    
+    // First try to initialize Web3 with existing connection
+    if (typeof initWeb3 === 'function') {
+        const initialized = await initWeb3();
+        if (initialized) {
+            console.log('Web3 initialized with existing connection');
+            updateConnectionUI();
+        }
+    }
+    
+    // Then check for any connection issues
+    if (typeof checkAndFixConnection === 'function') {
+        setTimeout(async () => {
+            await checkAndFixConnection();
+        }, 1000);
+    }
+    
+    // Set up periodic connection checking
+    setInterval(async () => {
+        if (typeof verifyConnection === 'function') {
+            const status = await verifyConnection();
+            if (status.connected && !window.connected) {
+                console.log('Found disconnected but active session, fixing...');
+                if (typeof checkAndFixConnection === 'function') {
+                    await checkAndFixConnection();
+                }
             }
-        } catch (error) {
-            console.log('No existing connection found');
+        }
+    }, 30000); // Check every 30 seconds
+}
+
+// Update connection UI
+function updateConnectionUI() {
+    if (window.connected && window.userAccount) {
+        // Update wallet status
+        const walletStatus = document.querySelector('.wallet-status');
+        if (walletStatus) {
+            walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
+            walletStatus.classList.add('connected');
+        }
+        
+        // Update connect button
+        const connectBtn = document.getElementById('connectBtn');
+        if (connectBtn) {
+            connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
+            connectBtn.onclick = disconnectWallet;
+        }
+        
+        // Update account address
+        if (typeof formatAddress === 'function') {
+            updateElement('accountAddress', formatAddress(window.userAccount));
+        }
+    }
+}
+
+// Show connection status
+async function showConnectionStatus() {
+    if (typeof verifyConnection === 'function') {
+        const status = await verifyConnection();
+        console.log('Current connection status:', status);
+        
+        if (!status.connected) {
+            console.log('No active wallet connection detected');
         }
     }
 }
@@ -155,7 +213,6 @@ function initCharts() {
 // Update charts with real data
 function updateCharts() {
     if (window.miningChart) {
-        // Update with real mining data
         const newData = window.miningChart.data.datasets[0].data;
         newData.push(Math.floor(Math.random() * 1000));
         if (newData.length > 10) newData.shift();
@@ -163,7 +220,6 @@ function updateCharts() {
     }
     
     if (window.distributionChart) {
-        // Update with real distribution data
         const totalMined = window.totalMined || 0;
         const totalClaimed = window.totalClaimed || 0;
         const totalWithdrawn = window.totalWithdrawn || 0;
@@ -218,7 +274,7 @@ function addMTKTokenPanel() {
         
         <div style="margin-bottom: 10px;">
             <div style="font-size: 12px; color: #94a3b8; margin-bottom: 5px;">Contract Address:</div>
-            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px; font-family: monospace; font-size: 11px; word-break: break-all;">
+            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; word-break: break-all;">
                 0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43
             </div>
         </div>
@@ -248,14 +304,14 @@ function addMTKTokenPanel() {
     
     document.body.appendChild(panel);
     
-    // Show panel after 5 seconds
+    // Show panel after 5 seconds if not connected
     setTimeout(() => {
         if (panel && !document.querySelector('.wallet-status.connected')) {
             panel.style.display = 'block';
         }
     }, 5000);
     
-    // Toggle panel when clicking MTK in wallet status
+    // Toggle panel when clicking wallet status
     document.addEventListener('click', function(e) {
         if (e.target.closest('.wallet-status')) {
             const panel = document.getElementById('mtkTokenPanel');
@@ -266,12 +322,12 @@ function addMTKTokenPanel() {
     });
 }
 
-// Setup recipient address auto-fill
+// Setup auto-fill for recipient address
 function setupRecipientAutoFill() {
     // Watch for wallet connection to auto-fill recipient
     const originalConnect = window.connectWallet;
     window.connectWallet = async function() {
-        await originalConnect.apply(this, arguments);
+        const result = await originalConnect.apply(this, arguments);
         
         // Auto-fill recipient address after connection
         setTimeout(() => {
@@ -283,6 +339,8 @@ function setupRecipientAutoFill() {
                 }
             }
         }, 1000);
+        
+        return result;
     };
 }
 
@@ -290,33 +348,24 @@ function setupRecipientAutoFill() {
 window.debugWallet = function() {
     console.log('=== WALLET DEBUG INFO ===');
     console.log('1. MetaMask installed:', typeof window.ethereum !== 'undefined');
-    console.log('2. Wallet connected:', window.connected);
+    console.log('2. Window connected:', window.connected);
     console.log('3. User account:', window.userAccount);
-    console.log('4. Web3 initialized:', web3 !== null);
-    console.log('5. Token contract:', tokenContract !== null);
+    console.log('4. Web3 initialized:', window.web3 !== null);
+    console.log('5. Token contract:', window.tokenContract !== null);
     console.log('6. MTK balance:', window.walletTokenBalance || 0);
     
-    if (window.ethereum) {
-        window.ethereum.request({ method: 'eth_chainId' }).then(chainId => {
-            console.log('7. Current chain ID:', chainId, chainId === '0xaa36a7' ? '(Sepolia)' : '(Not Sepolia)');
+    if (typeof verifyConnection === 'function') {
+        verifyConnection().then(status => {
+            console.log('7. Verified connection:', status);
         });
     }
     
     alert('Check browser console (F12) for debug info!');
 };
 
-// Export functions for other modules
+// Export functions
 window.showNotification = showNotification;
 window.showPendingOverlay = showPendingOverlay;
 window.hidePendingOverlay = hidePendingOverlay;
 window.updateCharts = updateCharts;
 window.debugWallet = debugWallet;
-
-// Add to global window for easy access
-window.utils = {
-    showNotification,
-    showPendingOverlay,
-    hidePendingOverlay,
-    updateCharts,
-    debugWallet
-};
