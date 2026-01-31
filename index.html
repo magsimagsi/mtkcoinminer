@@ -503,5 +503,54 @@
     <script src="blockchain.js"></script>
     <script src="faucet.js"></script>
     <script src="script.js"></script>
+
+    <div style="position: fixed; bottom: 10px; left: 10px; z-index: 9999; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 8px;">
+    <button onclick="checkWithdrawReady()" style="background: #ff6b6b; color: white; padding: 8px; margin: 2px; border-radius: 4px;">
+        🛠️ CHECK READY
+    </button>
+    <button onclick="testMetaMaskPopup()" style="background: #4ecdc4; color: white; padding: 8px; margin: 2px; border-radius: 4px;">
+        🔍 TEST POPUP
+    </button>
+</div>
+
+<script>
+// Add this test function
+async function testMetaMaskPopup() {
+    console.log('Testing MetaMask popup...');
+    
+    if (!window.ethereum) {
+        alert('MetaMask not installed!');
+        return;
+    }
+    
+    // Test 1: Simple transaction
+    try {
+        // Try to send 0 ETH to yourself (just to test popup)
+        const tx = {
+            from: userAccount,
+            to: userAccount,
+            value: '0x0',
+            gas: '0x5208'
+        };
+        
+        const txHash = await window.ethereum.request({
+            method: 'eth_sendTransaction',
+            params: [tx]
+        });
+        
+        console.log('Test transaction sent:', txHash);
+        alert('MetaMask popup worked! Check console for hash.');
+        
+    } catch (error) {
+        console.error('Test transaction failed:', error);
+        
+        if (error.code === 4001) {
+            alert('✅ MetaMask popped up but you rejected it. This is GOOD - means popup works!');
+        } else {
+            alert('MetaMask error: ' + error.message);
+        }
+    }
+}
+</script>
 </body>
 </html>
