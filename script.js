@@ -1,5 +1,7 @@
 // Main Application Script
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('MTK Miner Game Loading...');
+    
     // Navigation handling
     const navLinks = document.querySelectorAll('.nav-link');
     const sections = document.querySelectorAll('.section');
@@ -41,6 +43,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (typeof Chart !== 'undefined') {
         initCharts();
     }
+    
+    // Add MTK token info panel
+    addMTKTokenPanel();
+    
+    // Auto-fill recipient address when wallet connects
+    setupRecipientAutoFill();
 });
 
 // Check existing wallet connection
@@ -168,210 +176,147 @@ function updateCharts() {
         window.distributionChart.update();
     }
 }
-// Add to script.js
-window.debugWithdraw = function() {
-    console.log('=== WITHDRAW DEBUG INFO ===');
-    console.log('1. connected:', window.connected);
-    console.log('2. web3:', typeof web3);
-    console.log('3. tokenContract:', tokenContract ? '✓ Loaded' : '✗ Not loaded');
-    console.log('4. userAccount:', userAccount || 'Not connected');
-    console.log('5. walletTokenBalance:', window.walletTokenBalance || 0);
-    console.log('6. Form inputs:', {
-        amount: document.getElementById('withdrawAmount')?.value || 'Not found',
-        recipient: document.getElementById('recipientAddress')?.value || 'Not found'
-    });
-    
-    // Check ETH balance
-    if (web3 && userAccount) {
-        web3.eth.getBalance(userAccount).then(balance => {
-            console.log('7. ETH Balance:', web3.utils.fromWei(balance, 'ether'), 'ETH');
-        });
+
+// Add MTK token info panel
+function addMTKTokenPanel() {
+    // Remove existing panel if any
+    const existingPanel = document.getElementById('mtkTokenPanel');
+    if (existingPanel) {
+        existingPanel.remove();
     }
     
-    // Check token balance
-    if (tokenContract && userAccount) {
-        tokenContract.methods.balanceOf(userAccount).call().then(balance => {
-            tokenContract.methods.decimals().call().then(decimals => {
-                const formatted = balance / Math.pow(10, decimals);
-                console.log('8. Token Balance:', formatted, 'tokens');
-            });
+    // Create new panel
+    const panel = document.createElement('div');
+    panel.id = 'mtkTokenPanel';
+    panel.className = 'mtk-token-panel';
+    panel.style.cssText = `
+        position: fixed;
+        bottom: 70px;
+        right: 20px;
+        background: rgba(30, 41, 59, 0.95);
+        border: 1px solid #f8c555;
+        border-radius: 12px;
+        padding: 15px;
+        width: 280px;
+        z-index: 9998;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        display: none;
+        animation: slideInUp 0.3s ease;
+    `;
+    
+    panel.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h4 style="color: #f8c555; margin: 0; font-size: 16px;">
+                <i class="fas fa-coins"></i> MTK Token
+            </h4>
+            <button onclick="document.getElementById('mtkTokenPanel').style.display='none'" 
+                    style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 18px;">
+                ×
+            </button>
+        </div>
+        
+        <div style="margin-bottom: 10px;">
+            <div style="font-size: 12px; color: #94a3b8; margin-bottom: 5px;">Contract Address:</div>
+            <div style="background: rgba(255,255,255,0.05); padding: 8px; border-radius: 6px; font-family: monospace; font-size: 11px; word-break: break-all;">
+                0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+            <button onclick="addMTKToMetaMask()" 
+                    style="flex: 1; background: #f8c555; color: black; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold;">
+                <i class="fas fa-plus-circle"></i> Add to MetaMask
+            </button>
+            <button onclick="window.open('https://sepolia.etherscan.io/address/0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43', '_blank')" 
+                    style="flex: 1; background: rgba(255,255,255,0.1); color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px;">
+                <i class="fas fa-external-link-alt"></i> Etherscan
+            </button>
+        </div>
+        
+        <div style="display: flex; gap: 8px;">
+            <button onclick="getMTKFromFaucet()" 
+                    style="flex: 1; background: #2ed573; color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px;">
+                <i class="fas fa-gift"></i> Get MTK
+            </button>
+            <button onclick="checkMTKBalance()" 
+                    style="flex: 1; background: rgba(255,255,255,0.1); color: white; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-size: 12px;">
+                <i class="fas fa-wallet"></i> Check Balance
+            </button>
+        </div>
+    `;
+    
+    document.body.appendChild(panel);
+    
+    // Show panel after 5 seconds
+    setTimeout(() => {
+        if (panel && !document.querySelector('.wallet-status.connected')) {
+            panel.style.display = 'block';
+        }
+    }, 5000);
+    
+    // Toggle panel when clicking MTK in wallet status
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.wallet-status')) {
+            const panel = document.getElementById('mtkTokenPanel');
+            if (panel) {
+                panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+            }
+        }
+    });
+}
+
+// Setup recipient address auto-fill
+function setupRecipientAutoFill() {
+    // Watch for wallet connection to auto-fill recipient
+    const originalConnect = window.connectWallet;
+    window.connectWallet = async function() {
+        await originalConnect.apply(this, arguments);
+        
+        // Auto-fill recipient address after connection
+        setTimeout(() => {
+            if (window.userAccount) {
+                const recipientInput = document.getElementById('recipientAddress');
+                if (recipientInput && !recipientInput.value) {
+                    recipientInput.value = window.userAccount;
+                    showNotification('Recipient address auto-filled with your wallet', 'info');
+                }
+            }
+        }, 1000);
+    };
+}
+
+// Debug function
+window.debugWallet = function() {
+    console.log('=== WALLET DEBUG INFO ===');
+    console.log('1. MetaMask installed:', typeof window.ethereum !== 'undefined');
+    console.log('2. Wallet connected:', window.connected);
+    console.log('3. User account:', window.userAccount);
+    console.log('4. Web3 initialized:', web3 !== null);
+    console.log('5. Token contract:', tokenContract !== null);
+    console.log('6. MTK balance:', window.walletTokenBalance || 0);
+    
+    if (window.ethereum) {
+        window.ethereum.request({ method: 'eth_chainId' }).then(chainId => {
+            console.log('7. Current chain ID:', chainId, chainId === '0xaa36a7' ? '(Sepolia)' : '(Not Sepolia)');
         });
     }
     
     alert('Check browser console (F12) for debug info!');
 };
-// Add this to the END of your script.js file:
-
-// Initialize blockchain connection and MTK token info
-setTimeout(() => {
-    // Check for existing wallet connection
-    if (typeof window.ethereum !== 'undefined') {
-        window.ethereum.request({ method: 'eth_accounts' }).then(accounts => {
-            if (accounts.length > 0 && typeof connectWallet === 'function') {
-                setTimeout(() => connectWallet(), 1000);
-            }
-        });
-    }
-    
-    // Add MTK token info to page (floating info panel)
-    if (!document.getElementById('mtkTokenInfo')) {
-        const tokenInfoDiv = document.createElement('div');
-        tokenInfoDiv.id = 'mtkTokenInfo';
-        tokenInfoDiv.style.cssText = `
-            position: fixed;
-            bottom: 60px;
-            right: 10px;
-            background: rgba(248, 197, 85, 0.1);
-            border: 1px solid #f8c555;
-            border-radius: 8px;
-            padding: 10px;
-            font-size: 12px;
-            color: #f8c555;
-            z-index: 9998;
-            max-width: 200px;
-            backdrop-filter: blur(10px);
-            display: none;
-        `;
-        tokenInfoDiv.innerHTML = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                <strong>MTK Token Info</strong>
-                <button onclick="document.getElementById('mtkTokenInfo').style.display='none'" style="background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 14px;">×</button>
-            </div>
-            <div style="font-size: 10px; color: #94a3b8; margin-bottom: 5px;">
-                Sepolia Testnet
-            </div>
-            <div style="font-family: monospace; font-size: 10px; background: rgba(0,0,0,0.3); padding: 3px; border-radius: 3px; margin-bottom: 5px; word-break: break-all;">
-                0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43
-            </div>
-            <div style="display: flex; gap: 5px;">
-                <button onclick="addMTKToMetaMask()" style="background: #f8c555; color: black; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; flex: 1;">
-                    <i class="fas fa-plus-circle"></i> Add to MetaMask
-                </button>
-                <button onclick="getMTKTokens()" style="background: #2ed573; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; flex: 1;">
-                    <i class="fas fa-gift"></i> Get MTK
-                </button>
-            </div>
-        `;
-        document.body.appendChild(tokenInfoDiv);
-        
-        // Show token info after 3 seconds
-        setTimeout(() => {
-            if (document.getElementById('mtkTokenInfo')) {
-                document.getElementById('mtkTokenInfo').style.display = 'block';
-            }
-        }, 3000);
-    }
-    
-    // Add debug buttons if needed
-    if (window.location.href.includes('localhost') || window.location.href.includes('127.0.0.1')) {
-        const debugDiv = document.createElement('div');
-        debugDiv.style.cssText = `
-            position: fixed;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0,0,0,0.8);
-            padding: 10px;
-            border-radius: 8px;
-            z-index: 9997;
-            display: flex;
-            gap: 5px;
-        `;
-        debugDiv.innerHTML = `
-            <button onclick="debugWithdraw()" style="background: #ff6b6b; color: white; padding: 6px; border-radius: 4px; font-size: 10px; border: none; cursor: pointer;">
-                Debug
-            </button>
-            <button onclick="checkExistingConnection()" style="background: #4ecdc4; color: white; padding: 6px; border-radius: 4px; font-size: 10px; border: none; cursor: pointer;">
-                Reconnect
-            </button>
-            <button onclick="updateBalances()" style="background: #45b7d1; color: white; padding: 6px; border-radius: 4px; font-size: 10px; border: none; cursor: pointer;">
-                Refresh
-            </button>
-        `;
-        document.body.appendChild(debugDiv);
-    }
-    
-}, 2000);
-
-// Add function to test MTK faucet
-window.testMTKFaucet = async function() {
-    console.log('Testing MTK faucet...');
-    
-    if (!window.connected) {
-        showNotification('Connect wallet first!', 'error');
-        return;
-    }
-    
-    try {
-        showPendingOverlay('Testing MTK faucet...');
-        
-        // Test the contract directly
-        const testTx = {
-            from: userAccount,
-            to: '0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43',
-            data: '0x379607f5000000000000000000000000' + userAccount.slice(2) + '0000000000000000000000000000000000000000000000056bc75e2d63100000',
-            gas: '0x186a0'
-        };
-        
-        const txHash = await window.ethereum.request({
-            method: 'eth_sendTransaction',
-            params: [testTx]
-        });
-        
-        console.log('Test faucet transaction:', txHash);
-        showNotification('Test faucet transaction sent! Check MetaMask.', 'info');
-        hidePendingOverlay();
-        
-    } catch (error) {
-        hidePendingOverlay();
-        console.error('Test faucet error:', error);
-        showNotification('Test failed: ' + error.message, 'error');
-    }
-};
-
-// Add function to check MTK token balance
-window.checkMTKBalance = async function() {
-    if (!web3 || !userAccount) {
-        showNotification('Connect wallet first!', 'error');
-        return;
-    }
-    
-    try {
-        const contract = new web3.eth.Contract([
-            {
-                "constant": true,
-                "inputs": [{"name": "_owner", "type": "address"}],
-                "name": "balanceOf",
-                "outputs": [{"name": "balance", "type": "uint256"}],
-                "type": "function"
-            },
-            {
-                "constant": true,
-                "inputs": [],
-                "name": "decimals",
-                "outputs": [{"name": "", "type": "uint8"}],
-                "type": "function"
-            }
-        ], '0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43');
-        
-        const balance = await contract.methods.balanceOf(userAccount).call();
-        const decimals = await contract.methods.decimals().call();
-        const formatted = balance / Math.pow(10, decimals);
-        
-        showNotification(`Your MTK Balance: ${formatted.toFixed(4)} MTK`, 'success');
-        console.log('MTK Balance:', formatted);
-        
-    } catch (error) {
-        console.error('Balance check error:', error);
-        showNotification('Failed to check balance', 'error');
-    }
-};
-
-// Export new functions
-window.testMTKFaucet = testMTKFaucet;
-window.checkMTKBalance = checkMTKBalance;
 
 // Export functions for other modules
 window.showNotification = showNotification;
 window.showPendingOverlay = showPendingOverlay;
 window.hidePendingOverlay = hidePendingOverlay;
 window.updateCharts = updateCharts;
+window.debugWallet = debugWallet;
+
+// Add to global window for easy access
+window.utils = {
+    showNotification,
+    showPendingOverlay,
+    hidePendingOverlay,
+    updateCharts,
+    debugWallet
+};
