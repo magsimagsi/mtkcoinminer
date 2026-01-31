@@ -44,6 +44,38 @@ const ERC20_ABI = [
     {"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"faucet","outputs":[],"type":"function"}
 ];
 
+// Initialize Web3 and Check Connection
+async function initWeb3() {
+    try {
+        if (typeof window.ethereum === 'undefined') {
+            console.log('MetaMask not installed');
+            return false;
+        }
+
+        // Check for existing connection
+        const accounts = await window.ethereum.request({ 
+            method: 'eth_accounts' 
+        });
+
+        if (accounts.length > 0) {
+            userAccount = accounts[0];
+            web3 = new Web3(window.ethereum);
+            connected = true;
+            
+            // Initialize token contract
+            tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+            
+            console.log('Web3 initialized with existing connection:', userAccount);
+            return true;
+        }
+        
+        return false;
+    } catch (error) {
+        console.error('Web3 initialization error:', error);
+        return false;
+    }
+}
+
 // Connect Wallet
 async function connectWallet() {
     try {
@@ -65,33 +97,17 @@ async function connectWallet() {
         
         userAccount = accounts[0];
         web3 = new Web3(window.ethereum);
+        connected = true;
         
         // Check network
         const chainId = await web3.eth.getChainId();
         const isSepolia = chainId === 11155111;
         
-        // Update UI
-        updateElement('walletStatus', 'Connected ✓');
-        updateElement('accountAddress', formatAddress(userAccount));
-        updateElement('network', isSepolia ? 'Sepolia Testnet ✓' : `Network ${chainId}`);
-        
-        const connectBtn = document.getElementById('connectBtn');
-        if (connectBtn) {
-            connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
-            connectBtn.onclick = disconnectWallet;
-        }
-        
-        // Update wallet status display
-        const walletStatus = document.querySelector('.wallet-status');
-        if (walletStatus) {
-            walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
-            walletStatus.classList.add('connected');
-        }
-        
-        connected = true;
-        
-        // Initialize token contract (MTK by default)
+        // Initialize token contract
         tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+        
+        // Update UI
+        updateUIAfterConnection(isSepolia);
         
         // Get balances
         await updateBalances();
@@ -102,22 +118,49 @@ async function connectWallet() {
             showNotification('Switch to Sepolia for MTK tokens', 'warning');
         }
         
-        // Set up event listeners (only once)
-        if (!walletListeners) {
-            window.ethereum.on('accountsChanged', handleAccountsChanged);
-            window.ethereum.on('chainChanged', handleChainChanged);
-            window.ethereum.on('disconnect', handleDisconnect);
-            walletListeners = true;
-        }
+        // Set up event listeners
+        setupWalletListeners();
         
     } catch (error) {
         console.error('Connection error:', error);
         
         if (error.code === 4001) {
             showNotification('Connection rejected by user', 'error');
+        } else if (error.message.includes('Already processing eth_requestAccounts')) {
+            showNotification('MetaMask is busy. Please try again.', 'warning');
         } else {
             showNotification('Connection failed: ' + error.message, 'error');
         }
+    }
+}
+
+// Update UI after connection
+function updateUIAfterConnection(isSepolia) {
+    updateElement('walletStatus', 'Connected ✓');
+    updateElement('accountAddress', formatAddress(userAccount));
+    updateElement('network', isSepolia ? 'Sepolia Testnet ✓' : `Network ${chainId}`);
+    
+    const connectBtn = document.getElementById('connectBtn');
+    if (connectBtn) {
+        connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
+        connectBtn.onclick = disconnectWallet;
+    }
+    
+    const walletStatus = document.querySelector('.wallet-status');
+    if (walletStatus) {
+        walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
+        walletStatus.classList.add('connected');
+    }
+}
+
+// Setup wallet listeners
+function setupWalletListeners() {
+    if (!walletListeners && window.ethereum) {
+        window.ethereum.on('accountsChanged', handleAccountsChanged);
+        window.ethereum.on('chainChanged', handleChainChanged);
+        window.ethereum.on('disconnect', handleDisconnect);
+        walletListeners = true;
+        console.log('Wallet listeners set up');
     }
 }
 
@@ -126,10 +169,8 @@ function handleAccountsChanged(accounts) {
     console.log('Accounts changed:', accounts);
     
     if (accounts.length === 0) {
-        // User disconnected all accounts
         disconnectWallet();
     } else if (accounts[0] !== userAccount) {
-        // User switched accounts
         userAccount = accounts[0];
         updateElement('accountAddress', formatAddress(userAccount));
         showNotification('Account changed', 'info');
@@ -145,11 +186,7 @@ function handleAccountsChanged(accounts) {
 // Handle Chain Changes
 function handleChainChanged(chainId) {
     console.log('Chain changed to:', chainId);
-    
-    // Reload the page
-    setTimeout(() => {
-        window.location.reload();
-    }, 100);
+    setTimeout(() => window.location.reload(), 100);
 }
 
 // Handle Disconnect
@@ -179,7 +216,6 @@ function disconnectWallet() {
     if (connectBtn) {
         connectBtn.innerHTML = '<i class="fas fa-plug"></i> Connect Wallet';
         connectBtn.onclick = connectWallet;
-        connectBtn.disabled = false;
     }
     
     // Update wallet status display
@@ -209,7 +245,74 @@ function disconnectWallet() {
     }
     
     showNotification('Wallet disconnected', 'info');
-    console.log('Wallet disconnected successfully');
+}
+
+// Check and fix wallet connection
+async function checkAndFixConnection() {
+    console.log('Checking wallet connection...');
+    
+    if (typeof window.ethereum === 'undefined') {
+        console.log('MetaMask not installed');
+        return false;
+    }
+    
+    try {
+        const accounts = await window.ethereum.request({ 
+            method: 'eth_accounts' 
+        });
+        
+        console.log('MetaMask accounts:', accounts);
+        
+        if (accounts.length === 0) {
+            console.log('No accounts connected');
+            window.connected = false;
+            window.userAccount = null;
+            return false;
+        }
+        
+        // Check if our variables match MetaMask
+        if (!window.userAccount || window.userAccount.toLowerCase() !== accounts[0].toLowerCase()) {
+            console.log('Account mismatch, fixing...');
+            window.userAccount = accounts[0];
+            window.connected = true;
+            
+            // Initialize web3 if needed
+            if (!window.web3) {
+                window.web3 = new Web3(window.ethereum);
+            }
+            
+            // Initialize token contract
+            if (window.web3 && !tokenContract) {
+                tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+            }
+            
+            // Update UI
+            updateElement('accountAddress', formatAddress(userAccount));
+            updateElement('walletStatus', 'Connected ✓');
+            
+            const walletStatus = document.querySelector('.wallet-status');
+            if (walletStatus) {
+                walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
+                walletStatus.classList.add('connected');
+            }
+            
+            const connectBtn = document.getElementById('connectBtn');
+            if (connectBtn) {
+                connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
+                connectBtn.onclick = disconnectWallet;
+            }
+            
+            console.log('Connection fixed successfully');
+            return true;
+        }
+        
+        console.log('Connection is valid');
+        return true;
+        
+    } catch (error) {
+        console.error('Connection check error:', error);
+        return false;
+    }
 }
 
 // Update All Balances
@@ -234,7 +337,6 @@ async function updateBalances() {
                 updateElement('walletTokenBalance', tokenFormatted.toFixed(4));
                 updateElement('statsWalletBalance', `${tokenFormatted.toFixed(4)} MTK`);
                 
-                console.log('Token balance updated:', tokenFormatted);
             } catch (tokenError) {
                 console.error('Token balance error:', tokenError);
             }
@@ -267,7 +369,7 @@ async function getMTKFromFaucet() {
             gas: 100000
         });
         
-        // Wait a moment for transaction
+        // Wait for transaction
         setTimeout(async () => {
             hidePendingOverlay();
             showNotification('✅ Received 100 MTK tokens!', 'success');
@@ -288,39 +390,57 @@ async function getMTKFromFaucet() {
             showNotification('Transaction rejected', 'error');
         } else if (error.message.includes('insufficient funds')) {
             showNotification('Need ETH for gas fees', 'error');
+        } else if (error.message.includes('IBAN') || error.message.includes('indirect')) {
+            showNotification('Please use a standard Ethereum address in MetaMask', 'warning');
         } else {
             showNotification('Faucet error: ' + error.message, 'error');
         }
     }
 }
 
-// Mint Game MTK to Real Tokens
+// Mint Game MTK to Real Tokens (For claim function)
 async function mintGameTokens(amount) {
-    if (!connected || !web3 || !tokenContract) {
+    console.log('Minting game tokens:', amount);
+    
+    if (!window.connected || !window.web3 || !window.userAccount) {
         showNotification('Connect wallet first!', 'error');
         return false;
     }
     
     try {
-        showPendingOverlay(`Minting ${amount} MTK...`);
+        showPendingOverlay(`Converting ${amount} game MTK to real tokens...`);
         
-        // For now, we'll simulate minting since our contract doesn't have mint function
-        // In a real contract, you would call mint() function
+        // Use faucet function to give tokens (simulates conversion)
+        const tx = await tokenContract.methods.faucet(
+            userAccount,
+            web3.utils.toWei(amount.toString(), 'ether')
+        ).send({
+            from: userAccount,
+            gas: 100000
+        });
         
-        // Simulate success after 2 seconds
-        setTimeout(() => {
-            hidePendingOverlay();
-            showNotification(`✅ ${amount} MTK added to your wallet!`, 'success');
-            
-            // Update game balance
-            if (window.walletTokenBalance !== undefined) {
-                window.walletTokenBalance += amount;
-                updateElement('walletTokenBalance', window.walletTokenBalance.toFixed(4));
-            }
-            
-            // Add activity
-            if (typeof addActivity === 'function') {
-                addActivity('Minted', `${amount} MTK`);
+        console.log('Mint transaction:', tx);
+        
+        // Wait for transaction
+        setTimeout(async () => {
+            try {
+                hidePendingOverlay();
+                showNotification(`✅ ${amount} MTK added to your wallet!`, 'success');
+                
+                // Update wallet balance
+                if (window.walletTokenBalance !== undefined) {
+                    window.walletTokenBalance += amount;
+                }
+                
+                // Add to transaction history
+                addTransactionToHistory(tx.transactionHash, amount, userAccount, 'faucet');
+                
+                // Update balances
+                await updateBalances();
+                
+            } catch (error) {
+                hidePendingOverlay();
+                showNotification('Transaction completed!', 'info');
             }
         }, 2000);
         
@@ -329,7 +449,16 @@ async function mintGameTokens(amount) {
     } catch (error) {
         hidePendingOverlay();
         console.error('Mint error:', error);
-        showNotification('Mint failed: ' + error.message, 'error');
+        
+        if (error.code === 4001) {
+            showNotification('Transaction rejected by user', 'error');
+        } else if (error.message.includes('insufficient funds')) {
+            showNotification('Insufficient ETH for gas fees', 'error');
+        } else if (error.message.includes('IBAN') || error.message.includes('indirect')) {
+            showNotification('Please check your MetaMask address settings', 'warning');
+        } else {
+            showNotification('Mint failed: ' + error.message, 'error');
+        }
         return false;
     }
 }
@@ -350,7 +479,13 @@ async function estimateWithdrawGas() {
     }
     
     const amount = parseFloat(amountInput.value);
-    const recipient = recipientInput.value.trim();
+    let recipient = recipientInput.value.trim();
+    
+    // Use own address if recipient is empty
+    if (!recipient) {
+        recipient = userAccount;
+        recipientInput.value = userAccount;
+    }
     
     // Validation
     if (!amount || amount <= 0 || isNaN(amount)) {
@@ -358,12 +493,7 @@ async function estimateWithdrawGas() {
         return;
     }
     
-    if (!recipient) {
-        showNotification('Enter recipient address', 'error');
-        return;
-    }
-    
-    if (!web3.utils.isAddress(recipient)) {
+    if (!recipient || !web3.utils.isAddress(recipient)) {
         showNotification('Invalid Ethereum address', 'error');
         return;
     }
@@ -408,7 +538,7 @@ async function estimateWithdrawGas() {
         const withdrawBtn = document.querySelector('.btn-withdraw');
         if (withdrawBtn) {
             withdrawBtn.disabled = false;
-            withdrawBtn.textContent = `Withdraw ${amount} MTK`;
+            withdrawBtn.textContent = `Send ${amount} MTK`;
         }
         
         hidePendingOverlay();
@@ -420,6 +550,8 @@ async function estimateWithdrawGas() {
         
         if (error.message.includes('insufficient funds')) {
             showNotification('Insufficient ETH for gas fees', 'error');
+        } else if (error.message.includes('IBAN') || error.message.includes('indirect')) {
+            showNotification('Please use a standard Ethereum address', 'warning');
         } else {
             showNotification('Gas estimation failed: ' + error.message, 'error');
         }
@@ -437,7 +569,13 @@ async function withdrawTokens() {
     const recipientInput = document.getElementById('recipientAddress');
     
     const amount = parseFloat(amountInput?.value);
-    const recipient = recipientInput?.value?.trim();
+    let recipient = recipientInput?.value?.trim();
+    
+    // Use own address if recipient is empty
+    if (!recipient) {
+        recipient = userAccount;
+        recipientInput.value = userAccount;
+    }
     
     // Validation
     if (!amount || amount <= 0) {
@@ -517,7 +655,7 @@ async function withdrawTokens() {
                     
                 } else {
                     hidePendingOverlay();
-                    showNotification('Transaction failed or pending', 'error');
+                    showNotification('Transaction pending or failed', 'warning');
                     addTransactionToHistory(tx.transactionHash, amount, recipient, 'failed');
                 }
                 
@@ -536,6 +674,8 @@ async function withdrawTokens() {
             showNotification('Transaction rejected by user', 'error');
         } else if (error.message.includes('insufficient funds')) {
             showNotification('Insufficient ETH for gas fees', 'error');
+        } else if (error.message.includes('IBAN') || error.message.includes('indirect')) {
+            showNotification('Address format issue. Please use standard Ethereum address.', 'warning');
         } else {
             showNotification('Withdrawal failed: ' + error.message, 'error');
         }
@@ -686,6 +826,27 @@ async function checkMTKBalance() {
     }
 }
 
+// Verify Connection Status
+async function verifyConnection() {
+    if (!window.ethereum) {
+        return { connected: false, reason: 'MetaMask not installed' };
+    }
+    
+    try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+        
+        return {
+            connected: accounts.length > 0,
+            account: accounts[0] || null,
+            chainId: chainId,
+            isSepolia: chainId === '0xaa36a7'
+        };
+    } catch (error) {
+        return { connected: false, reason: error.message };
+    }
+}
+
 // Export functions
 window.connectWallet = connectWallet;
 window.disconnectWallet = disconnectWallet;
@@ -697,3 +858,7 @@ window.getMTKFromFaucet = getMTKFromFaucet;
 window.addMTKToMetaMask = addMTKToMetaMask;
 window.mintGameTokens = mintGameTokens;
 window.checkMTKBalance = checkMTKBalance;
+window.checkAndFixConnection = checkAndFixConnection;
+window.verifyConnection = verifyConnection;
+window.initWeb3 = initWeb3;
+window.formatAddress = formatAddress;
