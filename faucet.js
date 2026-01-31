@@ -1,47 +1,49 @@
 // Faucet Functions
 
 // Get MTK Tokens
-function getMTKTokens() {
+async function getMTKTokens() {
     console.log('getMTKTokens() called');
     
-    if (!window.connected) {
-        const connectFirst = confirm('Connect wallet to get MTK tokens! Connect now?');
-        if (connectFirst && typeof connectWallet === 'function') {
-            connectWallet().then(() => {
-                if (window.connected && typeof getMTKFromFaucet === 'function') {
-                    setTimeout(() => getMTKFromFaucet(), 1000);
-                }
-            });
+    // Check connection using verifyConnection
+    if (typeof verifyConnection === 'function') {
+        const status = await verifyConnection();
+        if (!status.connected) {
+            const connectFirst = confirm('Connect wallet to get MTK tokens! Connect now?');
+            if (connectFirst && typeof connectWallet === 'function') {
+                await connectWallet();
+                if (!window.connected) return;
+            } else {
+                return;
+            }
         }
-        return;
+        
+        // Check network
+        if (!status.isSepolia) {
+            const switchConfirm = confirm('Switch to Sepolia network for MTK tokens?');
+            if (switchConfirm && typeof switchToSepolia === 'function') {
+                await switchToSepolia();
+                setTimeout(() => {
+                    if (typeof getMTKFromFaucet === 'function') {
+                        getMTKFromFaucet();
+                    }
+                }, 2000);
+                return;
+            }
+        }
     }
     
-    // Check network
-    if (window.web3) {
-        window.web3.eth.getChainId().then(chainId => {
-            if (chainId !== 11155111) {
-                const switchConfirm = confirm('Switch to Sepolia network for MTK tokens?');
-                if (switchConfirm && typeof switchToSepolia === 'function') {
-                    switchToSepolia().then(() => {
-                        setTimeout(() => {
-                            if (typeof getMTKFromFaucet === 'function') {
-                                getMTKFromFaucet();
-                            }
-                        }, 2000);
-                    });
-                }
-            } else {
-                if (typeof getMTKFromFaucet === 'function') {
-                    getMTKFromFaucet();
-                }
-            }
-        });
+    // Call the faucet function
+    if (typeof getMTKFromFaucet === 'function') {
+        getMTKFromFaucet();
+    } else {
+        showNotification('MTK faucet function not available', 'error');
     }
 }
 
 // Get UNI Tokens
-function getUniTokens() {
-    if (!window.connected) {
+async function getUniTokens() {
+    const status = await verifyConnection();
+    if (!status.connected) {
         showNotification('Connect wallet first!', 'error');
         return;
     }
@@ -50,8 +52,9 @@ function getUniTokens() {
 }
 
 // Get LINK Tokens
-function getLinkTokens() {
-    if (!window.connected) {
+async function getLinkTokens() {
+    const status = await verifyConnection();
+    if (!status.connected) {
         showNotification('Connect wallet first!', 'error');
         return;
     }
@@ -61,8 +64,9 @@ function getLinkTokens() {
 }
 
 // Get DAI Tokens
-function getDaiTokens() {
-    if (!window.connected) {
+async function getDaiTokens() {
+    const status = await verifyConnection();
+    if (!status.connected) {
         showNotification('Connect wallet first!', 'error');
         return;
     }
@@ -132,17 +136,6 @@ function createTokenInstructions(tokenName, contractAddress, color) {
     });
 }
 
-// Copy to Clipboard Helper
-async function copyToClipboard(text) {
-    try {
-        await navigator.clipboard.writeText(text);
-        showNotification('Address copied to clipboard!', 'success');
-    } catch (err) {
-        console.error('Failed to copy:', err);
-        showNotification('Failed to copy address', 'error');
-    }
-}
-
 // Get Test ETH from Faucet
 function getTestETH(faucetType) {
     const faucets = {
@@ -158,10 +151,31 @@ function getTestETH(faucetType) {
     }
 }
 
+// Verify connection helper
+async function verifyConnection() {
+    if (typeof window.ethereum === 'undefined') {
+        return { connected: false, reason: 'MetaMask not installed' };
+    }
+    
+    try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+        
+        return {
+            connected: accounts.length > 0,
+            account: accounts[0] || null,
+            chainId: chainId,
+            isSepolia: chainId === '0xaa36a7'
+        };
+    } catch (error) {
+        return { connected: false, reason: error.message };
+    }
+}
+
 // Export functions
 window.getUniTokens = getUniTokens;
 window.getLinkTokens = getLinkTokens;
 window.getDaiTokens = getDaiTokens;
 window.getMTKTokens = getMTKTokens;
 window.getTestETH = getTestETH;
-window.copyToClipboard = copyToClipboard;
+window.verifyConnection = verifyConnection;
