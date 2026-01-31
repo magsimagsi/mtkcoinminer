@@ -168,6 +168,38 @@ function updateCharts() {
         window.distributionChart.update();
     }
 }
+// Add to script.js
+window.debugWithdraw = function() {
+    console.log('=== WITHDRAW DEBUG INFO ===');
+    console.log('1. connected:', window.connected);
+    console.log('2. web3:', typeof web3);
+    console.log('3. tokenContract:', tokenContract ? '✓ Loaded' : '✗ Not loaded');
+    console.log('4. userAccount:', userAccount || 'Not connected');
+    console.log('5. walletTokenBalance:', window.walletTokenBalance || 0);
+    console.log('6. Form inputs:', {
+        amount: document.getElementById('withdrawAmount')?.value || 'Not found',
+        recipient: document.getElementById('recipientAddress')?.value || 'Not found'
+    });
+    
+    // Check ETH balance
+    if (web3 && userAccount) {
+        web3.eth.getBalance(userAccount).then(balance => {
+            console.log('7. ETH Balance:', web3.utils.fromWei(balance, 'ether'), 'ETH');
+        });
+    }
+    
+    // Check token balance
+    if (tokenContract && userAccount) {
+        tokenContract.methods.balanceOf(userAccount).call().then(balance => {
+            tokenContract.methods.decimals().call().then(decimals => {
+                const formatted = balance / Math.pow(10, decimals);
+                console.log('8. Token Balance:', formatted, 'tokens');
+            });
+        });
+    }
+    
+    alert('Check browser console (F12) for debug info!');
+};
 
 // Export functions for other modules
 window.showNotification = showNotification;
