@@ -47,6 +47,8 @@ const ERC20_ABI = [
 // Initialize Web3 and Check Connection
 async function initWeb3() {
     try {
+        console.log('initWeb3() called');
+        
         if (typeof window.ethereum === 'undefined') {
             console.log('MetaMask not installed');
             showNotification('Please install MetaMask extension!', 'error');
@@ -57,6 +59,8 @@ async function initWeb3() {
         const accounts = await window.ethereum.request({ 
             method: 'eth_accounts' 
         });
+
+        console.log('Existing accounts:', accounts);
 
         if (accounts.length > 0) {
             userAccount = accounts[0];
@@ -81,6 +85,7 @@ async function initWeb3() {
             // Set up event listeners
             setupWalletListeners();
             
+            showNotification('Auto-connected to existing wallet', 'success');
             return true;
         }
         
@@ -88,6 +93,7 @@ async function initWeb3() {
         return false;
     } catch (error) {
         console.error('Web3 initialization error:', error);
+        showNotification('Connection error: ' + error.message, 'error');
         return false;
     }
 }
@@ -95,10 +101,10 @@ async function initWeb3() {
 // Connect Wallet
 async function connectWallet() {
     try {
-        console.log('Connecting wallet...');
+        console.log('connectWallet() called');
         
         if (typeof window.ethereum === 'undefined') {
-            showNotification('Please install MetaMask extension!', 'error');
+            showNotification('Please install MetaMask browser extension!', 'error');
             return;
         }
 
@@ -106,6 +112,8 @@ async function connectWallet() {
         const accounts = await window.ethereum.request({ 
             method: 'eth_requestAccounts' 
         });
+        
+        console.log('Accounts received:', accounts);
         
         if (accounts.length === 0) {
             showNotification('Please unlock MetaMask!', 'error');
@@ -129,7 +137,7 @@ async function connectWallet() {
         // Get balances
         await updateBalances();
         
-        showNotification(`Wallet connected: ${formatAddress(userAccount)}`, 'success');
+        showNotification(`✅ Wallet connected: ${formatAddress(userAccount)}`, 'success');
         
         if (!isSepolia) {
             const switchConfirm = confirm('You are not on Sepolia network. Switch to Sepolia for MTK tokens?');
@@ -145,7 +153,7 @@ async function connectWallet() {
         console.error('Connection error:', error);
         
         if (error.code === 4001) {
-            showNotification('Connection rejected by user', 'error');
+            showNotification('❌ Connection rejected by user', 'error');
         } else if (error.message.includes('Already processing eth_requestAccounts')) {
             showNotification('MetaMask is busy. Please try again.', 'warning');
         } else {
@@ -156,6 +164,8 @@ async function connectWallet() {
 
 // Update UI after connection
 function updateUIAfterConnection(isSepolia, chainId) {
+    console.log('Updating UI after connection, isSepolia:', isSepolia);
+    
     updateElement('walletStatus', 'Connected ✓');
     updateElement('accountAddress', formatAddress(userAccount));
     
@@ -181,7 +191,7 @@ function updateUIAfterConnection(isSepolia, chainId) {
 
 // Helper: Get network name from chain ID
 function getNetworkName(chainId) {
-    const chainIdNum = typeof chainId === 'string' ? parseInt(chainId) : chainId;
+    const chainIdNum = typeof chainId === 'string' ? parseInt(chainId, 16) : chainId;
     
     switch (chainIdNum) {
         case 1: return 'Mainnet';
@@ -361,9 +371,14 @@ async function checkAndFixConnection() {
 
 // Update All Balances
 async function updateBalances() {
-    if (!connected || !web3) return;
+    if (!connected || !web3) {
+        console.log('Cannot update balances: not connected');
+        return;
+    }
     
     try {
+        console.log('Updating balances...');
+        
         // Get ETH balance
         const ethBalance = await web3.eth.getBalance(userAccount);
         const ethFormatted = web3.utils.fromWei(ethBalance, 'ether');
@@ -381,6 +396,7 @@ async function updateBalances() {
                 updateElement('walletTokenBalance', tokenFormatted.toFixed(4));
                 updateElement('statsWalletBalance', `${tokenFormatted.toFixed(4)} MTK`);
                 
+                console.log('Token balance:', tokenFormatted);
             } catch (tokenError) {
                 console.error('Token balance error:', tokenError);
             }
@@ -873,34 +889,90 @@ async function verifyConnection() {
             connected: accounts.length > 0,
             account: accounts[0] || null,
             chainId: chainId,
-            isSepolia: chainId === '0xaa36a7' || chainId === '11155111'
+            isSepolia: chainId === '0xaa36a7' || chainId === 11155111
         };
     } catch (error) {
         return { connected: false, reason: error.message };
     }
 }
 
-// Auto-connect on page load if wallet is already connected
-async function autoConnectWallet() {
+// Auto-connect if MetaMask is already connected
+async function autoConnectIfConnected() {
+    console.log('Checking for existing MetaMask connection...');
+    
     if (typeof window.ethereum === 'undefined') {
-        console.log('MetaMask not available');
+        console.log('MetaMask not installed');
         return false;
     }
     
     try {
         const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        console.log('Existing accounts:', accounts);
         
         if (accounts.length > 0) {
             console.log('Found existing connection, auto-connecting...');
-            await connectWallet();
+            
+            userAccount = accounts[0];
+            web3 = new Web3(window.ethereum);
+            connected = true;
+            tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+            
+            // Update UI
+            updateElement('walletStatus', 'Connected ✓');
+            updateElement('accountAddress', formatAddress(userAccount));
+            
+            const walletStatus = document.querySelector('.wallet-status');
+            if (walletStatus) {
+                walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
+                walletStatus.classList.add('connected');
+            }
+            
+            const connectBtn = document.getElementById('connectBtn');
+            if (connectBtn) {
+                connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
+                connectBtn.onclick = disconnectWallet;
+            }
+            
+            // Check network
+            const chainId = await web3.eth.getChainId();
+            const isSepolia = chainId === 11155111 || chainId === '0xaa36a7';
+            updateElement('network', isSepolia ? 'Sepolia Testnet ✓' : `Chain ${chainId}`);
+            
+            // Get balances
+            await updateBalances();
+            
+            setupWalletListeners();
+            
+            console.log('Auto-connect successful!');
             return true;
         }
         
+        console.log('No existing connection found');
         return false;
+        
     } catch (error) {
         console.error('Auto-connect error:', error);
         return false;
     }
+}
+
+// Debug function
+function debugWallet() {
+    console.log('=== WALLET DEBUG INFO ===');
+    console.log('1. MetaMask installed:', typeof window.ethereum !== 'undefined');
+    console.log('2. Window connected:', window.connected);
+    console.log('3. User account:', window.userAccount);
+    console.log('4. Web3 initialized:', window.web3 !== null);
+    console.log('5. Token contract:', window.tokenContract !== null);
+    console.log('6. MTK balance:', window.walletTokenBalance || 0);
+    
+    if (typeof verifyConnection === 'function') {
+        verifyConnection().then(status => {
+            console.log('7. Verified connection:', status);
+        });
+    }
+    
+    alert('Check browser console (F12) for debug info!');
 }
 
 // Export functions
@@ -917,12 +989,13 @@ window.checkMTKBalance = checkMTKBalance;
 window.checkAndFixConnection = checkAndFixConnection;
 window.verifyConnection = verifyConnection;
 window.initWeb3 = initWeb3;
-window.autoConnectWallet = autoConnectWallet;
+window.autoConnectIfConnected = autoConnectIfConnected;
 window.formatAddress = formatAddress;
+window.debugWallet = debugWallet;
 
 // Auto-initialize when script loads
 setTimeout(async () => {
     if (typeof window.ethereum !== 'undefined') {
         await initWeb3();
     }
-}, 1000);
+}, 100);
