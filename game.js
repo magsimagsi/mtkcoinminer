@@ -18,7 +18,7 @@ let coinsPerSecond = 0;
 
 // Initialize Game
 function initGame() {
-    console.log('Initializing game...');
+    console.log('Initializing MTK Mining Game...');
     
     const canvas = document.getElementById('gameCanvas');
     if (!canvas) {
@@ -42,6 +42,10 @@ function initGame() {
     
     // Add click listener
     canvas.addEventListener('click', handleCanvasClick);
+    
+    // Initialize wallet balance display
+    window.walletTokenBalance = 0;
+    updateElement('walletTokenBalance', '0');
     
     console.log('Game initialized successfully');
 }
@@ -223,23 +227,31 @@ function showParticle(x, y) {
 // Update Game UI
 function updateGameUI() {
     // Update main display
-    updateElement('score', score);
+    updateElement('score', Math.floor(score));
     updateElement('multiplier', `${miningPower}x`);
     updateElement('miners', miners);
     updateElement('speed', miningSpeed.toFixed(1));
-    updateElement('totalMined', totalMined);
-    updateElement('totalClaimed', totalClaimed);
-    updateElement('totalWithdrawn', totalWithdrawn);
-    updateElement('gameBalance', score);
-    updateElement('claimableBalance', claimableBalance);
-    updateElement('claimableAmount', `${claimableBalance} available`);
-    updateElement('walletTokenBalance', walletTokenBalance);
+    updateElement('totalMined', Math.floor(totalMined));
+    updateElement('totalClaimed', Math.floor(totalClaimed));
+    updateElement('totalWithdrawn', Math.floor(totalWithdrawn || 0));
+    updateElement('gameBalance', Math.floor(score));
+    updateElement('claimableBalance', Math.floor(claimableBalance));
+    updateElement('claimableAmount', `${Math.floor(claimableBalance)} available`);
+    
+    // Update wallet balance if connected
+    if (window.connected && window.walletTokenBalance !== undefined) {
+        updateElement('walletTokenBalance', window.walletTokenBalance.toFixed(4));
+    }
     
     // Update stats section
-    updateElement('totalEarnings', `${totalMined} MTK`);
-    updateElement('statsWalletBalance', `${walletTokenBalance} MTK`);
+    updateElement('totalEarnings', `${Math.floor(totalMined)} MTK`);
     updateElement('miningEfficiency', `${coinsPerSecond.toFixed(2)} MTK/s`);
-    updateElement('bestSession', `${bestSession} MTK`);
+    updateElement('bestSession', `${Math.floor(bestSession)} MTK`);
+    
+    // Update stats wallet balance
+    if (window.connected && window.walletTokenBalance !== undefined) {
+        updateElement('statsWalletBalance', `${window.walletTokenBalance.toFixed(4)} MTK`);
+    }
     
     // Update charts
     if (typeof updateCharts === 'function') {
@@ -300,7 +312,7 @@ function upgradeSpeed() {
     }
 }
 
-// UPDATED: Claim Tokens - Now converts to real blockchain tokens
+// Claim Tokens - Convert game MTK to real tokens
 async function claimTokens() {
     if (claimableBalance <= 0) {
         showNotification('No tokens to claim!', 'error');
@@ -308,19 +320,31 @@ async function claimTokens() {
     }
     
     if (!window.connected) {
-        showNotification('Connect wallet first to claim real tokens!', 'error');
+        const connectFirst = confirm('Connect wallet to claim real MTK tokens! Connect now?');
+        if (connectFirst && typeof connectWallet === 'function') {
+            await connectWallet();
+            if (!window.connected) return;
+        } else {
+            return;
+        }
+    }
+    
+    const claimedAmount = Math.floor(claimableBalance);
+    
+    if (claimedAmount < 1) {
+        showNotification('Need at least 1 MTK to claim', 'error');
         return;
     }
     
-    const claimedAmount = claimableBalance;
-    
     try {
         // Convert game tokens to real blockchain tokens
-        const success = await convertGameToRealMTK(claimedAmount);
+        const success = await mintGameTokens(claimedAmount);
         
         if (success) {
             // Update game state
-            walletTokenBalance += claimedAmount;
+            if (window.walletTokenBalance !== undefined) {
+                window.walletTokenBalance += claimedAmount;
+            }
             totalClaimed += claimedAmount;
             claimableBalance = 0;
             score = 0;
@@ -329,15 +353,12 @@ async function claimTokens() {
             showNotification(`✅ Claimed ${claimedAmount} MTK to your wallet!`, 'success');
             addActivity('Claimed', `${claimedAmount} MTK`);
             
-            // Ask to add MTK to MetaMask
+            // Update blockchain wallet balance display
             setTimeout(() => {
-                const addToMM = confirm('Add MTK token to MetaMask for easy viewing?');
-                if (addToMM && typeof addMTKToMetaMask === 'function') {
-                    addMTKToMetaMask();
+                if (typeof checkMTKBalance === 'function') {
+                    checkMTKBalance();
                 }
             }, 1000);
-        } else {
-            showNotification('Failed to claim tokens. Try getting MTK from faucet first.', 'error');
         }
         
     } catch (error) {
