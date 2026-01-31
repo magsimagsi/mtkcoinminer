@@ -62,15 +62,14 @@ async function initializeBlockchain() {
         return;
     }
     
-    // Try to initialize Web3 with existing connection
-    if (typeof initWeb3 === 'function') {
-        const initialized = await initWeb3();
-        if (initialized) {
-            console.log('Web3 initialized with existing connection');
-            updateConnectionUI();
-        } else {
-            console.log('No existing wallet connection found');
-        }
+    // Try to auto-connect if already connected
+    if (typeof autoConnectIfConnected === 'function') {
+        setTimeout(async () => {
+            const connected = await autoConnectIfConnected();
+            if (connected) {
+                console.log('Auto-connected to existing wallet');
+            }
+        }, 500);
     }
     
     // Set up click handler for wallet status
@@ -103,36 +102,7 @@ async function initializeBlockchain() {
                 }
             }
         }
-    }, 30000); // Check every 30 seconds
-}
-
-// Update connection UI
-function updateConnectionUI() {
-    if (window.connected && window.userAccount) {
-        // Update wallet status
-        const walletStatus = document.querySelector('.wallet-status');
-        if (walletStatus) {
-            walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
-            walletStatus.classList.add('connected');
-        }
-        
-        // Update connect button
-        const connectBtn = document.getElementById('connectBtn');
-        if (connectBtn) {
-            connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
-            connectBtn.onclick = disconnectWallet;
-        }
-        
-        // Update account address
-        if (typeof formatAddress === 'function') {
-            updateElement('accountAddress', formatAddress(window.userAccount));
-        }
-        
-        // Update balances
-        if (typeof updateBalances === 'function') {
-            updateBalances();
-        }
-    }
+    }, 30000);
 }
 
 // Initialize charts
@@ -345,28 +315,8 @@ function setupRecipientAutoFill() {
     };
 }
 
-// Debug function
-window.debugWallet = function() {
-    console.log('=== WALLET DEBUG INFO ===');
-    console.log('1. MetaMask installed:', typeof window.ethereum !== 'undefined');
-    console.log('2. Window connected:', window.connected);
-    console.log('3. User account:', window.userAccount);
-    console.log('4. Web3 initialized:', window.web3 !== null);
-    console.log('5. Token contract:', window.tokenContract !== null);
-    console.log('6. MTK balance:', window.walletTokenBalance || 0);
-    
-    if (typeof verifyConnection === 'function') {
-        verifyConnection().then(status => {
-            console.log('7. Verified connection:', status);
-        });
-    }
-    
-    alert('Check browser console (F12) for debug info!');
-};
-
 // Export functions
 window.showNotification = showNotification;
 window.showPendingOverlay = showPendingOverlay;
 window.hidePendingOverlay = hidePendingOverlay;
 window.updateCharts = updateCharts;
-window.debugWallet = debugWallet;
