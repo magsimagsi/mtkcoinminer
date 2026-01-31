@@ -5,36 +5,19 @@ let connected = false;
 let tokenContract = null;
 let walletListeners = false;
 
-// Contract Configuration - FIXED ADDRESS (checksum format)
+// Contract Configuration - USING REAL WORKING SEPOLIA TOKEN
 const TOKEN_CONFIG = {
     MTK: {
-        address: '0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43', // This is correct
+        // USDC Test Token on Sepolia - THIS EXISTS AND WORKS
+        address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
         name: 'MTK Game Token',
         symbol: 'MTK',
-        decimals: 18,
-        etherscan: 'https://sepolia.etherscan.io/address/0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43'
-    },
-    UNI: {
-        address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984',
-        name: 'Uniswap',
-        symbol: 'UNI',
-        decimals: 18
-    },
-    LINK: {
-        address: '0x779877A7B0D9E8603169DdbD7836e478b4624789',
-        name: 'Chainlink',
-        symbol: 'LINK',
-        decimals: 18
-    },
-    DAI: {
-        address: '0x3e622317f8C93f7328350cF0B56d9eD4C620C5d6',
-        name: 'DAI Stablecoin',
-        symbol: 'DAI',
-        decimals: 18
+        decimals: 6,
+        etherscan: 'https://sepolia.etherscan.io/address/0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238'
     }
 };
 
-// ERC20 ABI - UPDATED WITH CORRECT FUNCTION SIGNATURES
+// ERC20 ABI - SIMPLIFIED VERSION
 const ERC20_ABI = [
     {
         "constant": true,
@@ -73,27 +56,10 @@ const ERC20_ABI = [
         "name": "transfer",
         "outputs": [{"name": "success", "type": "bool"}],
         "type": "function"
-    },
-    {
-        "constant": false,
-        "inputs": [
-            {"name": "to", "type": "address"},
-            {"name": "amount", "type": "uint256"}
-        ],
-        "name": "faucet",
-        "outputs": [],
-        "type": "function"
-    },
-    {
-        "constant": true,
-        "inputs": [],
-        "name": "totalSupply",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "type": "function"
     }
 ];
 
-// Initialize Web3 and Check Connection
+// Initialize Web3
 async function initWeb3() {
     try {
         console.log('initWeb3() called');
@@ -116,15 +82,11 @@ async function initWeb3() {
             web3 = new Web3(window.ethereum);
             connected = true;
             
-            // IMPORTANT: Convert address to checksum format
+            // Initialize token contract
             const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
-            console.log('Original address:', TOKEN_CONFIG.MTK.address);
-            console.log('Checksum address:', checksumAddress);
-            
-            // Initialize token contract with checksum address
             tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
             
-            console.log('Web3 initialized with existing connection:', userAccount);
+            console.log('Web3 initialized with existing connection');
             
             // Check network
             const chainId = await web3.eth.getChainId();
@@ -139,7 +101,6 @@ async function initWeb3() {
             // Set up event listeners
             setupWalletListeners();
             
-            showNotification('Auto-connected to existing wallet', 'success');
             return true;
         }
         
@@ -147,12 +108,11 @@ async function initWeb3() {
         return false;
     } catch (error) {
         console.error('Web3 initialization error:', error);
-        showNotification('Connection error: ' + error.message, 'error');
         return false;
     }
 }
 
-// Connect Wallet - FIXED VERSION
+// Connect Wallet
 async function connectWallet() {
     try {
         console.log('connectWallet() called');
@@ -182,11 +142,8 @@ async function connectWallet() {
         const chainId = await web3.eth.getChainId();
         const isSepolia = chainId === 11155111 || chainId === '0xaa36a7';
         
-        // Convert address to checksum format
+        // Initialize token contract
         const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
-        console.log('Using checksum address:', checksumAddress);
-        
-        // Initialize token contract with checksum address
         tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
         
         // Update UI
@@ -198,10 +155,7 @@ async function connectWallet() {
         showNotification(`✅ Wallet connected: ${formatAddress(userAccount)}`, 'success');
         
         if (!isSepolia) {
-            const switchConfirm = confirm('You are not on Sepolia network. Switch to Sepolia for MTK tokens?');
-            if (switchConfirm) {
-                await switchToSepolia();
-            }
+            showNotification('Switch to Sepolia for full functionality', 'warning');
         }
         
         // Set up event listeners
@@ -214,10 +168,6 @@ async function connectWallet() {
             showNotification('❌ Connection rejected by user', 'error');
         } else if (error.message.includes('Already processing eth_requestAccounts')) {
             showNotification('MetaMask is busy. Please try again.', 'warning');
-        } else if (error.message.includes('Provided address')) {
-            // Handle address validation error
-            console.error('Address validation error:', error);
-            showNotification('Contract address issue detected. Please refresh the page.', 'error');
         } else {
             showNotification('Connection failed: ' + error.message, 'error');
         }
@@ -226,16 +176,13 @@ async function connectWallet() {
 
 // Update UI after connection
 function updateUIAfterConnection(isSepolia, chainId) {
-    console.log('Updating UI after connection, isSepolia:', isSepolia);
-    
     updateElement('walletStatus', 'Connected ✓');
     updateElement('accountAddress', formatAddress(userAccount));
     
     if (isSepolia) {
         updateElement('network', 'Sepolia Testnet ✓');
     } else {
-        const networkName = getNetworkName(chainId);
-        updateElement('network', `${networkName} (Switch to Sepolia)`);
+        updateElement('network', `Chain ${chainId} (Switch to Sepolia)`);
     }
     
     const connectBtn = document.getElementById('connectBtn');
@@ -248,20 +195,6 @@ function updateUIAfterConnection(isSepolia, chainId) {
     if (walletStatus) {
         walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
         walletStatus.classList.add('connected');
-    }
-}
-
-// Helper: Get network name from chain ID
-function getNetworkName(chainId) {
-    const chainIdNum = typeof chainId === 'string' ? parseInt(chainId, 16) : chainId;
-    
-    switch (chainIdNum) {
-        case 1: return 'Mainnet';
-        case 11155111: return 'Sepolia';
-        case 5: return 'Goerli';
-        case 137: return 'Polygon';
-        case 42161: return 'Arbitrum';
-        default: return `Chain ${chainIdNum}`;
     }
 }
 
@@ -286,20 +219,13 @@ function handleAccountsChanged(accounts) {
         userAccount = accounts[0];
         updateElement('accountAddress', formatAddress(userAccount));
         showNotification('Account changed', 'info');
-        
-        // Reinitialize contract with new account
-        if (web3) {
-            const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
-            tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
-            updateBalances();
-        }
+        updateBalances();
     }
 }
 
 // Handle Chain Changes
 function handleChainChanged(chainId) {
     console.log('Chain changed to:', chainId);
-    // Reload page to reinitialize with new network
     window.location.reload();
 }
 
@@ -361,111 +287,7 @@ function disconnectWallet() {
     showNotification('Wallet disconnected', 'info');
 }
 
-// Get MTK Tokens from Faucet - FIXED VERSION
-async function getMTKFromFaucet() {
-    if (!connected || !web3 || !tokenContract) {
-        showNotification('Connect wallet first!', 'error');
-        return;
-    }
-    
-    try {
-        showPendingOverlay('Getting 100 MTK from faucet...');
-        
-        // Use toChecksumAddress for the user account too
-        const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
-        
-        const tx = await tokenContract.methods.faucet(
-            checksumUserAccount,
-            web3.utils.toWei('100', 'ether')
-        ).send({
-            from: userAccount,
-            gas: 200000
-        });
-        
-        hidePendingOverlay();
-        showNotification('✅ Received 100 MTK tokens!', 'success');
-        
-        // Add to transaction history
-        addTransactionToHistory(tx.transactionHash, 100, userAccount, 'faucet');
-        
-        // Update balance
-        await updateBalances();
-        
-    } catch (error) {
-        hidePendingOverlay();
-        console.error('Faucet error:', error);
-        
-        if (error.code === 4001) {
-            showNotification('Transaction rejected', 'error');
-        } else if (error.message.includes('insufficient funds')) {
-            showNotification('Need ETH for gas fees', 'error');
-        } else if (error.message.includes('Provided address')) {
-            showNotification('Address format issue. Please refresh page.', 'error');
-        } else {
-            showNotification('Faucet error: ' + error.message, 'error');
-        }
-    }
-}
-
-// Mint Game MTK to Real Tokens (For claim function) - FIXED
-async function mintGameTokens(amount) {
-    console.log('Minting game tokens:', amount);
-    
-    if (!connected || !web3 || !userAccount) {
-        showNotification('Connect wallet first!', 'error');
-        return false;
-    }
-    
-    try {
-        showPendingOverlay(`Converting ${amount} game MTK to real tokens...`);
-        
-        // Use checksum addresses
-        const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
-        
-        const tx = await tokenContract.methods.faucet(
-            checksumUserAccount,
-            web3.utils.toWei(amount.toString(), 'ether')
-        ).send({
-            from: userAccount,
-            gas: 200000
-        });
-        
-        console.log('Mint transaction:', tx);
-        
-        hidePendingOverlay();
-        showNotification(`✅ ${amount} MTK added to your wallet!`, 'success');
-        
-        // Update wallet balance
-        if (window.walletTokenBalance !== undefined) {
-            window.walletTokenBalance += amount;
-        }
-        
-        // Add to transaction history
-        addTransactionToHistory(tx.transactionHash, amount, userAccount, 'faucet');
-        
-        // Update balances
-        await updateBalances();
-        
-        return true;
-        
-    } catch (error) {
-        hidePendingOverlay();
-        console.error('Mint error:', error);
-        
-        if (error.code === 4001) {
-            showNotification('Transaction rejected by user', 'error');
-        } else if (error.message.includes('insufficient funds')) {
-            showNotification('Insufficient ETH for gas fees', 'error');
-        } else if (error.message.includes('Provided address')) {
-            showNotification('Address issue. Please refresh page.', 'error');
-        } else {
-            showNotification('Mint failed: ' + error.message, 'error');
-        }
-        return false;
-    }
-}
-
-// Update All Balances - FIXED
+// Update All Balances
 async function updateBalances() {
     if (!connected || !web3) {
         console.log('Cannot update balances: not connected');
@@ -483,8 +305,7 @@ async function updateBalances() {
         // Get MTK token balance
         if (tokenContract && userAccount) {
             try {
-                const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
-                const tokenBalance = await tokenContract.methods.balanceOf(checksumUserAccount).call();
+                const tokenBalance = await tokenContract.methods.balanceOf(userAccount).call();
                 const decimals = await tokenContract.methods.decimals().call();
                 const tokenFormatted = tokenBalance / Math.pow(10, decimals);
                 
@@ -496,18 +317,6 @@ async function updateBalances() {
                 console.log('Token balance:', tokenFormatted);
             } catch (tokenError) {
                 console.error('Token balance error:', tokenError);
-                // Try with non-checksum address as fallback
-                try {
-                    const tokenBalance = await tokenContract.methods.balanceOf(userAccount).call();
-                    const decimals = await tokenContract.methods.decimals().call();
-                    const tokenFormatted = tokenBalance / Math.pow(10, decimals);
-                    
-                    window.walletTokenBalance = tokenFormatted;
-                    updateElement('walletTokenBalance', tokenFormatted.toFixed(4));
-                    updateElement('statsWalletBalance', `${tokenFormatted.toFixed(4)} MTK`);
-                } catch (fallbackError) {
-                    console.error('Fallback balance error:', fallbackError);
-                }
             }
         }
         
@@ -520,7 +329,136 @@ async function updateBalances() {
     }
 }
 
-// Estimate Withdrawal Gas - FIXED
+// Get MTK Tokens from Faucet (Instructions)
+async function getMTKFromFaucet() {
+    if (!connected || !web3) {
+        showNotification('Connect wallet first!', 'error');
+        return;
+    }
+    
+    showNotification('Opening faucet instructions...', 'info');
+    
+    // Show instructions modal
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 4000;
+        backdrop-filter: blur(10px);
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: #1e293b; border-radius: 16px; padding: 30px; max-width: 500px; width: 90%; border: 2px solid #f8c555;">
+            <h3 style="color: #f8c555; margin-bottom: 20px;">
+                <i class="fas fa-info-circle"></i> Get MTK Tokens
+            </h3>
+            <div style="color: #94a3b8; margin-bottom: 20px;">
+                <p><strong>Step 1:</strong> Get Sepolia ETH from a faucet</p>
+                <p><strong>Step 2:</strong> Go to Uniswap on Sepolia network</p>
+                <p><strong>Step 3:</strong> Swap ETH for USDC tokens</p>
+                <p><strong>Token Address:</strong> 
+                    <code style="background: rgba(255,255,255,0.1); padding: 5px; border-radius: 4px; display: block; margin-top: 5px; word-break: break-all;">
+                        0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238
+                    </code>
+                </p>
+                <p><small>Note: This is USDC test token displayed as MTK in the game</small></p>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="window.open('https://sepoliafaucet.com', '_blank')" 
+                        style="background: #667eea; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer; flex: 1; min-width: 120px;">
+                    Get ETH
+                </button>
+                <button onclick="window.open('https://app.uniswap.org/swap', '_blank')" 
+                        style="background: #f8c555; color: black; border: none; padding: 12px; border-radius: 8px; cursor: pointer; flex: 1; min-width: 120px;">
+                    Uniswap
+                </button>
+                <button onclick="this.parentElement.parentElement.remove()" 
+                        style="background: #64748b; color: white; border: none; padding: 12px; border-radius: 8px; cursor: pointer;">
+                    Close
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    modal.addEventListener('click', function(e) {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+// Mint Game MTK to Real Tokens
+async function mintGameTokens(amount) {
+    console.log('Minting game tokens:', amount);
+    
+    if (!connected || !web3 || !userAccount) {
+        showNotification('Connect wallet first!', 'error');
+        return false;
+    }
+    
+    try {
+        showPendingOverlay(`Adding ${amount} MTK to your game...`);
+        
+        // For demo, simulate adding tokens
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        hidePendingOverlay();
+        showNotification(`⚠️ Demo: ${amount} MTK would be minted`, 'info');
+        showNotification('To get real tokens, use "Get MTK" button', 'info');
+        
+        // Update game balance (simulated)
+        if (window.walletTokenBalance !== undefined) {
+            window.walletTokenBalance += amount;
+            updateElement('walletTokenBalance', window.walletTokenBalance.toFixed(4));
+        }
+        
+        return true;
+        
+    } catch (error) {
+        hidePendingOverlay();
+        console.error('Mint error:', error);
+        showNotification('Mint failed: ' + error.message, 'error');
+        return false;
+    }
+}
+
+// Check MTK Balance
+async function checkMTKBalance() {
+    if (!connected || !web3 || !userAccount) {
+        showNotification('Connect wallet first!', 'error');
+        return;
+    }
+    
+    try {
+        if (tokenContract) {
+            const balance = await tokenContract.methods.balanceOf(userAccount).call();
+            const decimals = await tokenContract.methods.decimals().call();
+            const formatted = balance / Math.pow(10, decimals);
+            
+            showNotification(`Your MTK Balance: ${formatted.toFixed(4)}`, 'success');
+            return formatted;
+        } else {
+            const balance = window.walletTokenBalance || 0;
+            showNotification(`Your MTK Balance: ${balance.toFixed(4)} MTK`, 'success');
+            return balance;
+        }
+    } catch (error) {
+        console.error('Balance check error:', error);
+        showNotification('Failed to check balance', 'error');
+        return 0;
+    }
+}
+
+// Estimate Withdrawal Gas
 async function estimateWithdrawGas() {
     if (!connected || !web3 || !tokenContract) {
         showNotification('Connect wallet first!', 'error');
@@ -567,14 +505,10 @@ async function estimateWithdrawGas() {
         const decimals = await tokenContract.methods.decimals().call();
         const amountInWei = (amount * Math.pow(10, decimals)).toString();
         
-        // Use checksum addresses
-        const checksumRecipient = web3.utils.toChecksumAddress(recipient);
-        const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
-        
         const estimatedGas = await tokenContract.methods.transfer(
-            checksumRecipient, 
+            recipient, 
             amountInWei
-        ).estimateGas({ from: checksumUserAccount });
+        ).estimateGas({ from: userAccount });
         
         const gasPrice = await web3.eth.getGasPrice();
         const gasCostEth = estimatedGas * gasPrice / Math.pow(10, 18);
@@ -608,56 +542,11 @@ async function estimateWithdrawGas() {
     } catch (error) {
         hidePendingOverlay();
         console.error('Gas estimation error:', error);
-        
-        if (error.message.includes('insufficient funds')) {
-            showNotification('Insufficient ETH for gas fees', 'error');
-        } else if (error.message.includes('Provided address')) {
-            showNotification('Address format issue. Using fallback method.', 'warning');
-            // Try with non-checksum as fallback
-            try {
-                const decimals = await tokenContract.methods.decimals().call();
-                const amountInWei = (amount * Math.pow(10, decimals)).toString();
-                
-                const estimatedGas = await tokenContract.methods.transfer(
-                    recipient, 
-                    amountInWei
-                ).estimateGas({ from: userAccount });
-                
-                const gasPrice = await web3.eth.getGasPrice();
-                const gasCostEth = estimatedGas * gasPrice / Math.pow(10, 18);
-                
-                const gasInfo = document.getElementById('withdrawGasInfo');
-                if (gasInfo) {
-                    gasInfo.innerHTML = `
-                        <i class="fas fa-gas-pump"></i>
-                        <div>
-                            <strong>Gas Estimate (Fallback)</strong><br>
-                            Units: ${estimatedGas.toLocaleString()}<br>
-                            Price: ${(gasPrice / Math.pow(10, 9)).toFixed(2)} Gwei<br>
-                            Cost: ~${gasCostEth.toFixed(6)} ETH<br>
-                            <small style="color: #94a3b8;">Sepolia Testnet</small>
-                        </div>
-                    `;
-                    gasInfo.style.display = 'flex';
-                }
-                
-                const withdrawBtn = document.querySelector('.btn-withdraw');
-                if (withdrawBtn) {
-                    withdrawBtn.disabled = false;
-                    withdrawBtn.textContent = `Send ${amount} MTK`;
-                }
-                
-                showNotification('Gas estimation complete (fallback)!', 'success');
-            } catch (fallbackError) {
-                showNotification('Gas estimation failed: ' + fallbackError.message, 'error');
-            }
-        } else {
-            showNotification('Gas estimation failed: ' + error.message, 'error');
-        }
+        showNotification('Gas estimation failed: ' + error.message, 'error');
     }
 }
 
-// Withdraw Tokens - FIXED
+// Withdraw Tokens
 async function withdrawTokens() {
     if (!connected || !web3 || !tokenContract) {
         showNotification('Connect wallet first!', 'error');
@@ -699,86 +588,31 @@ async function withdrawTokens() {
         const decimals = await tokenContract.methods.decimals().call();
         const amountInWei = (amount * Math.pow(10, decimals)).toString();
         
-        // Try with checksum address first
-        let tx;
-        try {
-            const checksumRecipient = web3.utils.toChecksumAddress(recipient);
-            tx = await tokenContract.methods.transfer(
-                checksumRecipient, 
-                amountInWei
-            ).send({ 
-                from: userAccount,
-                gas: 200000
-            });
-        } catch (checksumError) {
-            console.log('Checksum failed, trying without:', checksumError);
-            // Fallback to non-checksum
-            tx = await tokenContract.methods.transfer(
-                recipient, 
-                amountInWei
-            ).send({ 
-                from: userAccount,
-                gas: 200000
-            });
-        }
+        const tx = await tokenContract.methods.transfer(
+            recipient, 
+            amountInWei
+        ).send({ 
+            from: userAccount,
+            gas: 100000
+        });
         
-        // Update pending overlay
-        const pendingTxHash = document.getElementById('pendingTxHash');
-        const pendingText = document.getElementById('pendingText');
+        hidePendingOverlay();
+        showNotification(`✅ Successfully sent ${amount} MTK!`, 'success');
         
-        if (pendingTxHash) {
-            pendingTxHash.innerHTML = `
-                Tx Hash: ${tx.transactionHash.substring(0, 20)}...<br>
-                <a href="https://sepolia.etherscan.io/tx/${tx.transactionHash}" 
-                   target="_blank" 
-                   style="color: #f8c555; font-size: 0.9em;">
-                   View on Etherscan
-                </a>
-            `;
-        }
-        if (pendingText) {
-            pendingText.textContent = 'Waiting for confirmation...';
-        }
+        // Update wallet balance
+        window.walletTokenBalance -= amount;
         
-        // Wait for transaction
-        setTimeout(async () => {
-            try {
-                const receipt = await web3.eth.getTransactionReceipt(tx.transactionHash);
-                
-                if (receipt && receipt.status) {
-                    hidePendingOverlay();
-                    
-                    // Update wallet balance
-                    window.walletTokenBalance -= amount;
-                    window.totalWithdrawn = (window.totalWithdrawn || 0) + amount;
-                    
-                    // Update UI
-                    updateElement('walletTokenBalance', window.walletTokenBalance.toFixed(4));
-                    updateElement('totalWithdrawn', window.totalWithdrawn);
-                    
-                    // Clear form
-                    if (amountInput) amountInput.value = '';
-                    
-                    // Add to transaction history
-                    addTransactionToHistory(tx.transactionHash, amount, recipient, 'success');
-                    
-                    showNotification(`✅ Successfully sent ${amount} MTK!`, 'success');
-                    
-                    // Refresh balances
-                    setTimeout(() => updateBalances(), 3000);
-                    
-                } else {
-                    hidePendingOverlay();
-                    showNotification('Transaction pending or failed', 'warning');
-                    addTransactionToHistory(tx.transactionHash, amount, recipient, 'failed');
-                }
-                
-            } catch (error) {
-                hidePendingOverlay();
-                showNotification('Transaction sent! Check Etherscan.', 'info');
-                addTransactionToHistory(tx.transactionHash, amount, recipient, 'pending');
-            }
-        }, 3000);
+        // Update UI
+        updateElement('walletTokenBalance', window.walletTokenBalance.toFixed(4));
+        
+        // Clear form
+        if (amountInput) amountInput.value = '';
+        
+        // Add to transaction history
+        addTransactionToHistory(tx.transactionHash, amount, recipient, 'success');
+        
+        // Refresh balances
+        setTimeout(() => updateBalances(), 3000);
         
     } catch (error) {
         hidePendingOverlay();
@@ -788,8 +622,6 @@ async function withdrawTokens() {
             showNotification('Transaction rejected by user', 'error');
         } else if (error.message.includes('insufficient funds')) {
             showNotification('Insufficient ETH for gas fees', 'error');
-        } else if (error.message.includes('Provided address')) {
-            showNotification('Address format issue. Please refresh page.', 'error');
         } else {
             showNotification('Withdrawal failed: ' + error.message, 'error');
         }
@@ -858,14 +690,9 @@ async function switchToSepolia() {
             params: [{ chainId: '0xaa36a7' }],
         });
         showNotification('Switched to Sepolia!', 'success');
-        
-        // Reload after switching network
-        setTimeout(() => {
-            window.location.reload();
-        }, 1000);
+        setTimeout(() => window.location.reload(), 1000);
     } catch (error) {
         if (error.code === 4902) {
-            // Add Sepolia network
             try {
                 await window.ethereum.request({
                     method: 'wallet_addEthereumChain',
@@ -911,8 +738,8 @@ async function addMTKToMetaMask() {
                 options: {
                     address: TOKEN_CONFIG.MTK.address,
                     symbol: 'MTK',
-                    decimals: 18,
-                    image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984/logo.png'
+                    decimals: 6,
+                    image: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png'
                 },
             },
         });
@@ -929,139 +756,6 @@ function formatAddress(address) {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 }
 
-// Check MTK Balance - FIXED
-async function checkMTKBalance() {
-    if (!connected || !web3 || !userAccount) {
-        showNotification('Connect wallet first!', 'error');
-        return;
-    }
-    
-    try {
-        // Try checksum address first
-        let balance;
-        try {
-            const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
-            balance = await tokenContract.methods.balanceOf(checksumUserAccount).call();
-        } catch (checksumError) {
-            console.log('Checksum failed, trying without:', checksumError);
-            balance = await tokenContract.methods.balanceOf(userAccount).call();
-        }
-        
-        const decimals = await tokenContract.methods.decimals().call();
-        const formatted = balance / Math.pow(10, decimals);
-        
-        showNotification(`Your MTK Balance: ${formatted.toFixed(4)} MTK`, 'success');
-        return formatted;
-    } catch (error) {
-        console.error('Balance check error:', error);
-        showNotification('Failed to check balance', 'error');
-        return 0;
-    }
-}
-
-// Verify Connection Status
-async function verifyConnection() {
-    if (!window.ethereum) {
-        return { connected: false, reason: 'MetaMask not installed' };
-    }
-    
-    try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-        
-        return {
-            connected: accounts.length > 0,
-            account: accounts[0] || null,
-            chainId: chainId,
-            isSepolia: chainId === '0xaa36a7' || chainId === 11155111
-        };
-    } catch (error) {
-        return { connected: false, reason: error.message };
-    }
-}
-
-// Auto-connect if MetaMask is already connected
-async function autoConnectIfConnected() {
-    console.log('Checking for existing MetaMask connection...');
-    
-    if (typeof window.ethereum === 'undefined') {
-        console.log('MetaMask not installed');
-        return false;
-    }
-    
-    try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        console.log('Existing accounts:', accounts);
-        
-        if (accounts.length > 0) {
-            console.log('Found existing connection, auto-connecting...');
-            
-            userAccount = accounts[0];
-            web3 = new Web3(window.ethereum);
-            connected = true;
-            
-            // Convert address to checksum format
-            const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
-            tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
-            
-            // Update UI
-            updateElement('walletStatus', 'Connected ✓');
-            updateElement('accountAddress', formatAddress(userAccount));
-            
-            const walletStatus = document.querySelector('.wallet-status');
-            if (walletStatus) {
-                walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
-                walletStatus.classList.add('connected');
-            }
-            
-            const connectBtn = document.getElementById('connectBtn');
-            if (connectBtn) {
-                connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
-                connectBtn.onclick = disconnectWallet;
-            }
-            
-            // Check network
-            const chainId = await web3.eth.getChainId();
-            const isSepolia = chainId === 11155111 || chainId === '0xaa36a7';
-            updateElement('network', isSepolia ? 'Sepolia Testnet ✓' : `Chain ${chainId}`);
-            
-            // Get balances
-            await updateBalances();
-            
-            setupWalletListeners();
-            
-            console.log('Auto-connect successful!');
-            return true;
-        }
-        
-        console.log('No existing connection found');
-        return false;
-        
-    } catch (error) {
-        console.error('Auto-connect error:', error);
-        return false;
-    }
-}
-
-// Debug function
-function debugWallet() {
-    console.log('=== WALLET DEBUG INFO ===');
-    console.log('1. MetaMask installed:', typeof window.ethereum !== 'undefined');
-    console.log('2. Window connected:', window.connected);
-    console.log('3. User account:', window.userAccount);
-    console.log('4. Web3 initialized:', window.web3 !== null);
-    console.log('5. Token contract:', window.tokenContract !== null);
-    console.log('6. MTK balance:', window.walletTokenBalance || 0);
-    
-    if (typeof verifyConnection === 'function') {
-        verifyConnection().then(status => {
-            console.log('7. Verified connection:', status);
-        });
-    }
-    
-    alert('Check browser console (F12) for debug info!');
-}
-
 // Export functions
 window.connectWallet = connectWallet;
 window.disconnectWallet = disconnectWallet;
@@ -1073,14 +767,10 @@ window.getMTKFromFaucet = getMTKFromFaucet;
 window.addMTKToMetaMask = addMTKToMetaMask;
 window.mintGameTokens = mintGameTokens;
 window.checkMTKBalance = checkMTKBalance;
-window.checkAndFixConnection = checkAndFixConnection;
-window.verifyConnection = verifyConnection;
 window.initWeb3 = initWeb3;
-window.autoConnectIfConnected = autoConnectIfConnected;
 window.formatAddress = formatAddress;
-window.debugWallet = debugWallet;
 
-// Auto-initialize when script loads
+// Auto-initialize
 setTimeout(async () => {
     if (typeof window.ethereum !== 'undefined') {
         await initWeb3();
