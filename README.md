@@ -11,7 +11,7 @@ A blockchain-integrated mining game where you can:
 
 ## 🛠️ Technologies
 - HTML5 Canvas for game
-- Vanilla JavaScript
+-JavaScript
 - Web3.js for blockchain
 - MetaMask wallet integration
 - Chart.js for statistics
