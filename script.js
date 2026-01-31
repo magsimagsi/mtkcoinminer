@@ -21,16 +21,22 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Scroll to top of section
             document.querySelector('.main-container').scrollTop = 0;
+            
+            // Initialize game if needed
+            if (targetId === 'game' && typeof initGame === 'function' && !window.gameInitialized) {
+                setTimeout(() => {
+                    initGame();
+                    window.gameInitialized = true;
+                }, 100);
+            }
         });
     });
     
     // Initialize game if not already initialized
-    if (typeof initGame === 'function') {
+    if (typeof initGame === 'function' && !window.gameInitialized) {
         setTimeout(() => {
-            if (!window.gameInitialized) {
-                initGame();
-                window.gameInitialized = true;
-            }
+            initGame();
+            window.gameInitialized = true;
         }, 100);
     }
     
@@ -174,3 +180,4 @@ window.showNotification = showNotification;
 window.showPendingOverlay = showPendingOverlay;
 window.hidePendingOverlay = hidePendingOverlay;
 window.updateCharts = updateCharts;
+window.checkExistingConnection = checkExistingConnection;
