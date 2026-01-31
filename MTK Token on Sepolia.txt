@@ -1,0 +1,5 @@
+Contract Address: 0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43
+Network: Sepolia Testnet
+Token Name: MTK Game Token
+Symbol: MTK
+Decimals: 18
