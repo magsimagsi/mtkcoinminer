@@ -65,7 +65,9 @@ function updateElement(id, content) {
 
 // Format Address
 function formatAddress(address, start = 6, end = 4) {
-    if (!address || address.length < start + end) return address;
+    if (!address || typeof address !== 'string') return 'Invalid address';
+    if (address === 'Not connected') return address;
+    if (address.length < start + end) return address;
     return `${address.substring(0, start)}...${address.substring(address.length - end)}`;
 }
 
@@ -123,9 +125,11 @@ function isValidEthAddress(address) {
 async function copyToClipboard(text) {
     try {
         await navigator.clipboard.writeText(text);
+        showNotification('Copied to clipboard!', 'success');
         return true;
     } catch (err) {
         console.error('Failed to copy:', err);
+        showNotification('Failed to copy', 'error');
         return false;
     }
 }
