@@ -5,10 +5,10 @@ let connected = false;
 let tokenContract = null;
 let walletListeners = false;
 
-// Contract Configuration
+// Contract Configuration - FIXED ADDRESS (checksum format)
 const TOKEN_CONFIG = {
     MTK: {
-        address: '0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43',
+        address: '0x3D6Eb3Fc92C799CB6b8716c5c8E5f8A78eFE8A43', // This is correct
         name: 'MTK Game Token',
         symbol: 'MTK',
         decimals: 18,
@@ -34,14 +34,63 @@ const TOKEN_CONFIG = {
     }
 };
 
-// ERC20 ABI
+// ERC20 ABI - UPDATED WITH CORRECT FUNCTION SIGNATURES
 const ERC20_ABI = [
-    {"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"type":"function"},
-    {"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"type":"function"},
-    {"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"},
-    {"constant":true,"inputs":[{"name":"_owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"balance","type":"uint256"}],"type":"function"},
-    {"constant":false,"inputs":[{"name":"_to","type":"address"},{"name":"_value","type":"uint256"}],"name":"transfer","outputs":[{"name":"success","type":"bool"}],"type":"function"},
-    {"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"faucet","outputs":[],"type":"function"}
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "name",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "symbol",
+        "outputs": [{"name": "", "type": "string"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [{"name": "", "type": "uint8"}],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [{"name": "_owner", "type": "address"}],
+        "name": "balanceOf",
+        "outputs": [{"name": "balance", "type": "uint256"}],
+        "type": "function"
+    },
+    {
+        "constant": false,
+        "inputs": [
+            {"name": "_to", "type": "address"},
+            {"name": "_value", "type": "uint256"}
+        ],
+        "name": "transfer",
+        "outputs": [{"name": "success", "type": "bool"}],
+        "type": "function"
+    },
+    {
+        "constant": false,
+        "inputs": [
+            {"name": "to", "type": "address"},
+            {"name": "amount", "type": "uint256"}
+        ],
+        "name": "faucet",
+        "outputs": [],
+        "type": "function"
+    },
+    {
+        "constant": true,
+        "inputs": [],
+        "name": "totalSupply",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "type": "function"
+    }
 ];
 
 // Initialize Web3 and Check Connection
@@ -67,8 +116,13 @@ async function initWeb3() {
             web3 = new Web3(window.ethereum);
             connected = true;
             
-            // Initialize token contract
-            tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+            // IMPORTANT: Convert address to checksum format
+            const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
+            console.log('Original address:', TOKEN_CONFIG.MTK.address);
+            console.log('Checksum address:', checksumAddress);
+            
+            // Initialize token contract with checksum address
+            tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
             
             console.log('Web3 initialized with existing connection:', userAccount);
             
@@ -98,7 +152,7 @@ async function initWeb3() {
     }
 }
 
-// Connect Wallet
+// Connect Wallet - FIXED VERSION
 async function connectWallet() {
     try {
         console.log('connectWallet() called');
@@ -128,8 +182,12 @@ async function connectWallet() {
         const chainId = await web3.eth.getChainId();
         const isSepolia = chainId === 11155111 || chainId === '0xaa36a7';
         
-        // Initialize token contract
-        tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+        // Convert address to checksum format
+        const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
+        console.log('Using checksum address:', checksumAddress);
+        
+        // Initialize token contract with checksum address
+        tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
         
         // Update UI
         updateUIAfterConnection(isSepolia, chainId);
@@ -156,6 +214,10 @@ async function connectWallet() {
             showNotification('❌ Connection rejected by user', 'error');
         } else if (error.message.includes('Already processing eth_requestAccounts')) {
             showNotification('MetaMask is busy. Please try again.', 'warning');
+        } else if (error.message.includes('Provided address')) {
+            // Handle address validation error
+            console.error('Address validation error:', error);
+            showNotification('Contract address issue detected. Please refresh the page.', 'error');
         } else {
             showNotification('Connection failed: ' + error.message, 'error');
         }
@@ -227,7 +289,8 @@ function handleAccountsChanged(accounts) {
         
         // Reinitialize contract with new account
         if (web3) {
-            tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+            const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
+            tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
             updateBalances();
         }
     }
@@ -298,120 +361,7 @@ function disconnectWallet() {
     showNotification('Wallet disconnected', 'info');
 }
 
-// Check and fix wallet connection
-async function checkAndFixConnection() {
-    console.log('Checking wallet connection...');
-    
-    if (typeof window.ethereum === 'undefined') {
-        console.log('MetaMask not installed');
-        return false;
-    }
-    
-    try {
-        const accounts = await window.ethereum.request({ 
-            method: 'eth_accounts' 
-        });
-        
-        console.log('MetaMask accounts:', accounts);
-        
-        if (accounts.length === 0) {
-            console.log('No accounts connected');
-            window.connected = false;
-            window.userAccount = null;
-            return false;
-        }
-        
-        // Check if our variables match MetaMask
-        if (!window.userAccount || window.userAccount.toLowerCase() !== accounts[0].toLowerCase()) {
-            console.log('Account mismatch, fixing...');
-            window.userAccount = accounts[0];
-            window.connected = true;
-            
-            // Initialize web3 if needed
-            if (!window.web3) {
-                window.web3 = new Web3(window.ethereum);
-            }
-            
-            // Initialize token contract
-            if (window.web3) {
-                tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
-            }
-            
-            // Update UI
-            updateElement('accountAddress', formatAddress(userAccount));
-            updateElement('walletStatus', 'Connected ✓');
-            
-            const walletStatus = document.querySelector('.wallet-status');
-            if (walletStatus) {
-                walletStatus.innerHTML = '<i class="fas fa-check-circle"></i><span>Connected</span>';
-                walletStatus.classList.add('connected');
-            }
-            
-            const connectBtn = document.getElementById('connectBtn');
-            if (connectBtn) {
-                connectBtn.innerHTML = '<i class="fas fa-wallet"></i> Disconnect';
-                connectBtn.onclick = disconnectWallet;
-            }
-            
-            // Get balances
-            await updateBalances();
-            
-            console.log('Connection fixed successfully');
-            return true;
-        }
-        
-        console.log('Connection is valid');
-        return true;
-        
-    } catch (error) {
-        console.error('Connection check error:', error);
-        return false;
-    }
-}
-
-// Update All Balances
-async function updateBalances() {
-    if (!connected || !web3) {
-        console.log('Cannot update balances: not connected');
-        return;
-    }
-    
-    try {
-        console.log('Updating balances...');
-        
-        // Get ETH balance
-        const ethBalance = await web3.eth.getBalance(userAccount);
-        const ethFormatted = web3.utils.fromWei(ethBalance, 'ether');
-        updateElement('ethBalance', `${parseFloat(ethFormatted).toFixed(4)} ETH`);
-        
-        // Get MTK token balance
-        if (tokenContract && userAccount) {
-            try {
-                const tokenBalance = await tokenContract.methods.balanceOf(userAccount).call();
-                const decimals = await tokenContract.methods.decimals().call();
-                const tokenFormatted = tokenBalance / Math.pow(10, decimals);
-                
-                // Update global variable and UI
-                window.walletTokenBalance = tokenFormatted;
-                updateElement('walletTokenBalance', tokenFormatted.toFixed(4));
-                updateElement('statsWalletBalance', `${tokenFormatted.toFixed(4)} MTK`);
-                
-                console.log('Token balance:', tokenFormatted);
-            } catch (tokenError) {
-                console.error('Token balance error:', tokenError);
-            }
-        }
-        
-        // Get latest block
-        const blockNumber = await web3.eth.getBlockNumber();
-        updateElement('lastBlock', blockNumber);
-        
-    } catch (error) {
-        console.error('Balance update error:', error);
-    }
-}
-
-// Get MTK Tokens from Faucet
+// Get MTK Tokens from Faucet - FIXED VERSION
 async function getMTKFromFaucet() {
     if (!connected || !web3 || !tokenContract) {
         showNotification('Connect wallet first!', 'error');
@@ -421,12 +371,15 @@ async function getMTKFromFaucet() {
     try {
         showPendingOverlay('Getting 100 MTK from faucet...');
         
+        // Use toChecksumAddress for the user account too
+        const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
+        
         const tx = await tokenContract.methods.faucet(
-            userAccount,
+            checksumUserAccount,
             web3.utils.toWei('100', 'ether')
         ).send({
             from: userAccount,
-            gas: 100000
+            gas: 200000
         });
         
         hidePendingOverlay();
@@ -446,13 +399,15 @@ async function getMTKFromFaucet() {
             showNotification('Transaction rejected', 'error');
         } else if (error.message.includes('insufficient funds')) {
             showNotification('Need ETH for gas fees', 'error');
+        } else if (error.message.includes('Provided address')) {
+            showNotification('Address format issue. Please refresh page.', 'error');
         } else {
             showNotification('Faucet error: ' + error.message, 'error');
         }
     }
 }
 
-// Mint Game MTK to Real Tokens (For claim function)
+// Mint Game MTK to Real Tokens (For claim function) - FIXED
 async function mintGameTokens(amount) {
     console.log('Minting game tokens:', amount);
     
@@ -464,13 +419,15 @@ async function mintGameTokens(amount) {
     try {
         showPendingOverlay(`Converting ${amount} game MTK to real tokens...`);
         
-        // Use faucet function to give tokens (simulates conversion)
+        // Use checksum addresses
+        const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
+        
         const tx = await tokenContract.methods.faucet(
-            userAccount,
+            checksumUserAccount,
             web3.utils.toWei(amount.toString(), 'ether')
         ).send({
             from: userAccount,
-            gas: 100000
+            gas: 200000
         });
         
         console.log('Mint transaction:', tx);
@@ -499,6 +456,8 @@ async function mintGameTokens(amount) {
             showNotification('Transaction rejected by user', 'error');
         } else if (error.message.includes('insufficient funds')) {
             showNotification('Insufficient ETH for gas fees', 'error');
+        } else if (error.message.includes('Provided address')) {
+            showNotification('Address issue. Please refresh page.', 'error');
         } else {
             showNotification('Mint failed: ' + error.message, 'error');
         }
@@ -506,7 +465,62 @@ async function mintGameTokens(amount) {
     }
 }
 
-// Estimate Withdrawal Gas
+// Update All Balances - FIXED
+async function updateBalances() {
+    if (!connected || !web3) {
+        console.log('Cannot update balances: not connected');
+        return;
+    }
+    
+    try {
+        console.log('Updating balances...');
+        
+        // Get ETH balance
+        const ethBalance = await web3.eth.getBalance(userAccount);
+        const ethFormatted = web3.utils.fromWei(ethBalance, 'ether');
+        updateElement('ethBalance', `${parseFloat(ethFormatted).toFixed(4)} ETH`);
+        
+        // Get MTK token balance
+        if (tokenContract && userAccount) {
+            try {
+                const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
+                const tokenBalance = await tokenContract.methods.balanceOf(checksumUserAccount).call();
+                const decimals = await tokenContract.methods.decimals().call();
+                const tokenFormatted = tokenBalance / Math.pow(10, decimals);
+                
+                // Update global variable and UI
+                window.walletTokenBalance = tokenFormatted;
+                updateElement('walletTokenBalance', tokenFormatted.toFixed(4));
+                updateElement('statsWalletBalance', `${tokenFormatted.toFixed(4)} MTK`);
+                
+                console.log('Token balance:', tokenFormatted);
+            } catch (tokenError) {
+                console.error('Token balance error:', tokenError);
+                // Try with non-checksum address as fallback
+                try {
+                    const tokenBalance = await tokenContract.methods.balanceOf(userAccount).call();
+                    const decimals = await tokenContract.methods.decimals().call();
+                    const tokenFormatted = tokenBalance / Math.pow(10, decimals);
+                    
+                    window.walletTokenBalance = tokenFormatted;
+                    updateElement('walletTokenBalance', tokenFormatted.toFixed(4));
+                    updateElement('statsWalletBalance', `${tokenFormatted.toFixed(4)} MTK`);
+                } catch (fallbackError) {
+                    console.error('Fallback balance error:', fallbackError);
+                }
+            }
+        }
+        
+        // Get latest block
+        const blockNumber = await web3.eth.getBlockNumber();
+        updateElement('lastBlock', blockNumber);
+        
+    } catch (error) {
+        console.error('Balance update error:', error);
+    }
+}
+
+// Estimate Withdrawal Gas - FIXED
 async function estimateWithdrawGas() {
     if (!connected || !web3 || !tokenContract) {
         showNotification('Connect wallet first!', 'error');
@@ -553,10 +567,14 @@ async function estimateWithdrawGas() {
         const decimals = await tokenContract.methods.decimals().call();
         const amountInWei = (amount * Math.pow(10, decimals)).toString();
         
+        // Use checksum addresses
+        const checksumRecipient = web3.utils.toChecksumAddress(recipient);
+        const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
+        
         const estimatedGas = await tokenContract.methods.transfer(
-            recipient, 
+            checksumRecipient, 
             amountInWei
-        ).estimateGas({ from: userAccount });
+        ).estimateGas({ from: checksumUserAccount });
         
         const gasPrice = await web3.eth.getGasPrice();
         const gasCostEth = estimatedGas * gasPrice / Math.pow(10, 18);
@@ -593,13 +611,53 @@ async function estimateWithdrawGas() {
         
         if (error.message.includes('insufficient funds')) {
             showNotification('Insufficient ETH for gas fees', 'error');
+        } else if (error.message.includes('Provided address')) {
+            showNotification('Address format issue. Using fallback method.', 'warning');
+            // Try with non-checksum as fallback
+            try {
+                const decimals = await tokenContract.methods.decimals().call();
+                const amountInWei = (amount * Math.pow(10, decimals)).toString();
+                
+                const estimatedGas = await tokenContract.methods.transfer(
+                    recipient, 
+                    amountInWei
+                ).estimateGas({ from: userAccount });
+                
+                const gasPrice = await web3.eth.getGasPrice();
+                const gasCostEth = estimatedGas * gasPrice / Math.pow(10, 18);
+                
+                const gasInfo = document.getElementById('withdrawGasInfo');
+                if (gasInfo) {
+                    gasInfo.innerHTML = `
+                        <i class="fas fa-gas-pump"></i>
+                        <div>
+                            <strong>Gas Estimate (Fallback)</strong><br>
+                            Units: ${estimatedGas.toLocaleString()}<br>
+                            Price: ${(gasPrice / Math.pow(10, 9)).toFixed(2)} Gwei<br>
+                            Cost: ~${gasCostEth.toFixed(6)} ETH<br>
+                            <small style="color: #94a3b8;">Sepolia Testnet</small>
+                        </div>
+                    `;
+                    gasInfo.style.display = 'flex';
+                }
+                
+                const withdrawBtn = document.querySelector('.btn-withdraw');
+                if (withdrawBtn) {
+                    withdrawBtn.disabled = false;
+                    withdrawBtn.textContent = `Send ${amount} MTK`;
+                }
+                
+                showNotification('Gas estimation complete (fallback)!', 'success');
+            } catch (fallbackError) {
+                showNotification('Gas estimation failed: ' + fallbackError.message, 'error');
+            }
         } else {
             showNotification('Gas estimation failed: ' + error.message, 'error');
         }
     }
 }
 
-// Withdraw Tokens
+// Withdraw Tokens - FIXED
 async function withdrawTokens() {
     if (!connected || !web3 || !tokenContract) {
         showNotification('Connect wallet first!', 'error');
@@ -641,13 +699,28 @@ async function withdrawTokens() {
         const decimals = await tokenContract.methods.decimals().call();
         const amountInWei = (amount * Math.pow(10, decimals)).toString();
         
-        const tx = await tokenContract.methods.transfer(
-            recipient, 
-            amountInWei
-        ).send({ 
-            from: userAccount,
-            gas: 100000
-        });
+        // Try with checksum address first
+        let tx;
+        try {
+            const checksumRecipient = web3.utils.toChecksumAddress(recipient);
+            tx = await tokenContract.methods.transfer(
+                checksumRecipient, 
+                amountInWei
+            ).send({ 
+                from: userAccount,
+                gas: 200000
+            });
+        } catch (checksumError) {
+            console.log('Checksum failed, trying without:', checksumError);
+            // Fallback to non-checksum
+            tx = await tokenContract.methods.transfer(
+                recipient, 
+                amountInWei
+            ).send({ 
+                from: userAccount,
+                gas: 200000
+            });
+        }
         
         // Update pending overlay
         const pendingTxHash = document.getElementById('pendingTxHash');
@@ -715,6 +788,8 @@ async function withdrawTokens() {
             showNotification('Transaction rejected by user', 'error');
         } else if (error.message.includes('insufficient funds')) {
             showNotification('Insufficient ETH for gas fees', 'error');
+        } else if (error.message.includes('Provided address')) {
+            showNotification('Address format issue. Please refresh page.', 'error');
         } else {
             showNotification('Withdrawal failed: ' + error.message, 'error');
         }
@@ -854,7 +929,7 @@ function formatAddress(address) {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
 }
 
-// Check MTK Balance
+// Check MTK Balance - FIXED
 async function checkMTKBalance() {
     if (!connected || !web3 || !userAccount) {
         showNotification('Connect wallet first!', 'error');
@@ -862,7 +937,16 @@ async function checkMTKBalance() {
     }
     
     try {
-        const balance = await tokenContract.methods.balanceOf(userAccount).call();
+        // Try checksum address first
+        let balance;
+        try {
+            const checksumUserAccount = web3.utils.toChecksumAddress(userAccount);
+            balance = await tokenContract.methods.balanceOf(checksumUserAccount).call();
+        } catch (checksumError) {
+            console.log('Checksum failed, trying without:', checksumError);
+            balance = await tokenContract.methods.balanceOf(userAccount).call();
+        }
+        
         const decimals = await tokenContract.methods.decimals().call();
         const formatted = balance / Math.pow(10, decimals);
         
@@ -915,7 +999,10 @@ async function autoConnectIfConnected() {
             userAccount = accounts[0];
             web3 = new Web3(window.ethereum);
             connected = true;
-            tokenContract = new web3.eth.Contract(ERC20_ABI, TOKEN_CONFIG.MTK.address);
+            
+            // Convert address to checksum format
+            const checksumAddress = web3.utils.toChecksumAddress(TOKEN_CONFIG.MTK.address);
+            tokenContract = new web3.eth.Contract(ERC20_ABI, checksumAddress);
             
             // Update UI
             updateElement('walletStatus', 'Connected ✓');
