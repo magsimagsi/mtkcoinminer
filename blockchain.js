@@ -205,7 +205,7 @@ async function updateBalances() {
             const tokenFormatted = tokenBalance / Math.pow(10, decimals);
             
             // Update wallet token balance in game
-            if (typeof window !== 'undefined' && window.walletTokenBalance !== undefined) {
+            if (typeof window !== 'undefined') {
                 window.walletTokenBalance = tokenFormatted;
                 updateElement('walletTokenBalance', tokenFormatted.toFixed(4));
             }
@@ -222,6 +222,8 @@ async function updateBalances() {
 
 // Estimate Withdrawal Gas
 async function estimateWithdrawGas() {
+    console.log('estimateWithdrawGas() called');
+    
     if (!connected || !web3 || !tokenContract) {
         showNotification('Connect wallet first!', 'error');
         return;
@@ -230,42 +232,69 @@ async function estimateWithdrawGas() {
     const amountInput = document.getElementById('withdrawAmount');
     const recipientInput = document.getElementById('recipientAddress');
     
-    const amount = parseFloat(amountInput?.value);
-    const recipient = recipientInput?.value?.trim();
-    
-    // Validation
-    if (!amount || amount <= 0) {
-        showNotification('Enter valid amount', 'error');
+    if (!amountInput || !recipientInput) {
+        showNotification('Form fields not found!', 'error');
         return;
     }
     
-    if (!recipient || !web3.utils.isAddress(recipient)) {
-        showNotification('Enter valid address', 'error');
+    const amount = parseFloat(amountInput.value);
+    const recipient = recipientInput.value.trim();
+    
+    console.log('Gas estimation for:', { amount, recipient });
+    
+    // Validation
+    if (!amount || amount <= 0 || isNaN(amount)) {
+        showNotification('Enter valid amount (greater than 0)', 'error');
+        return;
+    }
+    
+    if (!recipient) {
+        showNotification('Enter recipient address', 'error');
+        return;
+    }
+    
+    if (!web3.utils.isAddress(recipient)) {
+        showNotification('Invalid Ethereum address format', 'error');
         return;
     }
     
     const walletBalance = window.walletTokenBalance || 0;
+    console.log('Wallet balance:', walletBalance, 'Requested:', amount);
+    
     if (walletBalance < amount) {
         showNotification(`Insufficient balance! You have ${walletBalance.toFixed(4)} tokens`, 'error');
         return;
     }
     
     try {
-        showPendingOverlay('Estimating gas...');
+        showPendingOverlay('Estimating gas fees...');
         
-        // Convert amount to wei
+        // Get token decimals
         const decimals = await tokenContract.methods.decimals().call();
-        const amountInWei = web3.utils.toWei(amount.toString(), 'ether');
+        console.log('Token decimals:', decimals);
+        
+        // Convert amount using token's decimals
+        const amountInWei = web3.utils.toBN(amount.toString()).mul(web3.utils.toBN(10).pow(web3.utils.toBN(decimals)));
+        console.log('Amount in wei (correct):', amountInWei.toString());
         
         // Estimate gas
         const estimatedGas = await tokenContract.methods.transfer(
             recipient, 
-            amountInWei
+            amountInWei.toString()
         ).estimateGas({ from: userAccount });
         
         // Get gas price
         const gasPrice = await web3.eth.getGasPrice();
-        const gasCost = web3.utils.fromWei((BigInt(estimatedGas) * BigInt(gasPrice)).toString(), 'ether');
+        const gasCostEth = web3.utils.fromWei(
+            (BigInt(estimatedGas) * BigInt(gasPrice)).toString(), 
+            'ether'
+        );
+        
+        console.log('Gas estimate:', {
+            estimatedGas,
+            gasPrice: web3.utils.fromWei(gasPrice, 'gwei'),
+            gasCostEth
+        });
         
         // Update gas info display
         const gasInfo = document.getElementById('withdrawGasInfo');
@@ -273,12 +302,14 @@ async function estimateWithdrawGas() {
             gasInfo.innerHTML = `
                 <i class="fas fa-gas-pump"></i>
                 <div>
-                    <strong>Gas Estimate</strong><br>
+                    <strong>Gas Estimate ✅</strong><br>
                     Units: ${estimatedGas.toLocaleString()}<br>
                     Price: ${parseFloat(web3.utils.fromWei(gasPrice, 'gwei')).toFixed(2)} Gwei<br>
-                    Cost: ~${parseFloat(gasCost).toFixed(6)} ETH
+                    Cost: ~${parseFloat(gasCostEth).toFixed(6)} ETH<br>
+                    <small style="color: #94a3b8;">Network: Sepolia Testnet</small>
                 </div>
             `;
+            gasInfo.style.display = 'flex';
         }
         
         // Enable withdraw button
@@ -286,25 +317,45 @@ async function estimateWithdrawGas() {
         if (withdrawBtn) {
             withdrawBtn.disabled = false;
             withdrawBtn.textContent = `Withdraw ${amount} Tokens`;
+            withdrawBtn.style.opacity = '1';
+            withdrawBtn.style.cursor = 'pointer';
         }
         
         hidePendingOverlay();
-        showNotification('Gas estimation complete!', 'success');
+        showNotification('Gas estimation complete! Ready to withdraw.', 'success');
         
     } catch (error) {
         hidePendingOverlay();
         console.error('Gas estimation error:', error);
         
+        let errorMessage = 'Gas estimation failed';
+        
         if (error.message.includes('insufficient funds')) {
-            showNotification('Insufficient ETH for gas fees', 'error');
+            errorMessage = 'Insufficient ETH for gas fees. Get Sepolia ETH first.';
+        } else if (error.message.includes('exceeds balance')) {
+            errorMessage = 'Amount exceeds token balance';
+        } else if (error.message.includes('revert')) {
+            errorMessage = 'Transaction would fail (check balance and address)';
+        } else if (error.message.includes('always failing transaction')) {
+            errorMessage = 'Transaction will fail. Check recipient address.';
         } else {
-            showNotification('Gas estimation failed: ' + error.message, 'error');
+            errorMessage = 'Gas estimation failed: ' + error.message;
+        }
+        
+        showNotification(errorMessage, 'error');
+        
+        // Keep withdraw button disabled
+        const withdrawBtn = document.querySelector('.btn-withdraw');
+        if (withdrawBtn) {
+            withdrawBtn.disabled = true;
         }
     }
 }
 
 // Withdraw Tokens
 async function withdrawTokens() {
+    console.log('withdrawTokens() called - Starting withdrawal process');
+    
     if (!connected || !web3 || !tokenContract) {
         showNotification('Connect wallet first!', 'error');
         return;
@@ -313,67 +364,174 @@ async function withdrawTokens() {
     const amountInput = document.getElementById('withdrawAmount');
     const recipientInput = document.getElementById('recipientAddress');
     
-    const amount = parseFloat(amountInput?.value);
-    const recipient = recipientInput?.value?.trim();
+    if (!amountInput || !recipientInput) {
+        console.error('Form inputs not found:', { amountInput, recipientInput });
+        showNotification('Error: Form fields not found', 'error');
+        return;
+    }
+    
+    const amount = parseFloat(amountInput.value);
+    const recipient = recipientInput.value.trim();
+    
+    console.log('Withdrawal request:', { amount, recipient });
     
     // Validation
-    if (!amount || amount <= 0) {
-        showNotification('Enter valid amount', 'error');
+    if (!amount || amount <= 0 || isNaN(amount)) {
+        showNotification('Enter valid amount (greater than 0)', 'error');
         return;
     }
     
-    if (!recipient || !web3.utils.isAddress(recipient)) {
-        showNotification('Enter valid address', 'error');
+    if (!recipient) {
+        showNotification('Enter recipient address', 'error');
         return;
     }
     
+    if (!web3.utils.isAddress(recipient)) {
+        showNotification('Invalid Ethereum address format', 'error');
+        return;
+    }
+    
+    // Check wallet balance from global variable
     const walletBalance = window.walletTokenBalance || 0;
+    console.log('Balance check - Wallet:', walletBalance, 'Requested:', amount);
+    
     if (walletBalance < amount) {
         showNotification(`Insufficient balance! You have ${walletBalance.toFixed(4)} tokens`, 'error');
         return;
     }
     
     try {
-        showPendingOverlay('Processing withdrawal...');
+        showPendingOverlay('Preparing withdrawal transaction...');
         
-        // Convert amount to wei
+        // Get token decimals
         const decimals = await tokenContract.methods.decimals().call();
-        const amountInWei = web3.utils.toWei(amount.toString(), 'ether');
+        console.log('Token decimals:', decimals);
+        
+        // Convert amount using token's decimals
+        const amountInWei = web3.utils.toBN(amount.toString()).mul(web3.utils.toBN(10).pow(web3.utils.toBN(decimals)));
+        console.log('Amount in wei:', amountInWei.toString());
+        
+        // Update pending overlay
+        const pendingText = document.getElementById('pendingText');
+        if (pendingText) {
+            pendingText.textContent = 'Sign transaction in MetaMask...';
+        }
+        
+        // Estimate gas with safety margin
+        let estimatedGas;
+        try {
+            estimatedGas = await tokenContract.methods.transfer(
+                recipient, 
+                amountInWei.toString()
+            ).estimateGas({ from: userAccount });
+            estimatedGas = Math.floor(estimatedGas * 1.3); // 30% safety margin
+            console.log('Estimated gas (with margin):', estimatedGas);
+        } catch (gasError) {
+            console.warn('Gas estimation failed, using default:', gasError);
+            estimatedGas = 150000; // Default gas limit for ERC20 transfers
+        }
+        
+        // Get gas price with 25% increase for faster confirmation
+        const gasPrice = await web3.eth.getGasPrice();
+        const increasedGasPrice = Math.floor(Number(gasPrice) * 1.25).toString();
+        console.log('Gas price:', gasPrice, 'Increased:', increasedGasPrice);
+        
+        console.log('Transaction params:', {
+            from: userAccount,
+            to: tokenContract.options.address,
+            gas: estimatedGas,
+            gasPrice: increasedGasPrice
+        });
+        
+        // Check if user has enough ETH for gas
+        const ethBalance = await web3.eth.getBalance(userAccount);
+        const gasCost = BigInt(estimatedGas) * BigInt(increasedGasPrice);
+        console.log('ETH balance:', ethBalance, 'Gas cost:', gasCost.toString());
+        
+        if (BigInt(ethBalance) < gasCost) {
+            hidePendingOverlay();
+            const neededEth = web3.utils.fromWei((gasCost - BigInt(ethBalance)).toString(), 'ether');
+            showNotification(`Need ${parseFloat(neededEth).toFixed(6)} more ETH for gas fees`, 'error');
+            return;
+        }
         
         // Send transaction
         const tx = await tokenContract.methods.transfer(
             recipient, 
-            amountInWei
+            amountInWei.toString()
         ).send({ 
             from: userAccount,
-            gas: 100000
+            gas: estimatedGas,
+            gasPrice: increasedGasPrice
         });
         
-        // Update pending overlay
+        console.log('Transaction sent:', tx);
+        
+        // Update overlay with transaction hash
         const pendingTxHash = document.getElementById('pendingTxHash');
-        const pendingText = document.getElementById('pendingText');
-        
         if (pendingTxHash) {
-            pendingTxHash.textContent = `Tx Hash: ${tx.transactionHash.substring(0, 20)}...`;
-        }
-        if (pendingText) {
-            pendingText.textContent = 'Waiting for confirmation...';
+            const shortHash = tx.transactionHash.substring(0, 20) + '...';
+            pendingTxHash.innerHTML = `
+                Tx Hash: ${shortHash}<br>
+                <a href="https://sepolia.etherscan.io/tx/${tx.transactionHash}" 
+                   target="_blank" 
+                   style="color: #f8c555; font-size: 0.9em;">
+                   View on Etherscan
+                </a>
+            `;
         }
         
-        // Wait for confirmation
-        const receipt = await web3.eth.getTransactionReceipt(tx.transactionHash);
+        if (pendingText) {
+            pendingText.textContent = 'Waiting for confirmation... (This may take 15-30 seconds)';
+        }
+        
+        // Wait for transaction to be mined
+        let receipt;
+        let attempts = 0;
+        const maxAttempts = 60; // 60 seconds timeout
+        
+        while (!receipt && attempts < maxAttempts) {
+            try {
+                receipt = await web3.eth.getTransactionReceipt(tx.transactionHash);
+                if (!receipt) {
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                    attempts++;
+                    console.log(`Waiting for confirmation... attempt ${attempts}/${maxAttempts}`);
+                    
+                    // Update waiting message
+                    if (pendingText && attempts % 5 === 0) {
+                        pendingText.textContent = `Waiting for confirmation... ${attempts}s`;
+                    }
+                }
+            } catch (error) {
+                console.warn('Error checking receipt:', error);
+                attempts++;
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+        
+        if (!receipt) {
+            throw new Error('Transaction timeout - check Etherscan for status');
+        }
+        
+        console.log('Transaction receipt:', receipt);
         
         if (receipt.status) {
-            // Success
+            // SUCCESS
             hidePendingOverlay();
             
-            // Update wallet balance
-            window.walletTokenBalance -= amount;
-            window.totalWithdrawn += amount;
+            // Update balances
+            if (typeof window.walletTokenBalance !== 'undefined') {
+                window.walletTokenBalance = Math.max(0, window.walletTokenBalance - amount);
+            }
+            
+            if (typeof window.totalWithdrawn !== 'undefined') {
+                window.totalWithdrawn = (window.totalWithdrawn || 0) + amount;
+            }
             
             // Update UI
-            updateElement('walletTokenBalance', window.walletTokenBalance.toFixed(4));
-            updateElement('totalWithdrawn', window.totalWithdrawn);
+            updateElement('walletTokenBalance', (window.walletTokenBalance || 0).toFixed(4));
+            updateElement('totalWithdrawn', window.totalWithdrawn || 0);
             
             // Clear form
             if (amountInput) amountInput.value = '';
@@ -383,13 +541,13 @@ async function withdrawTokens() {
             
             showNotification(`✅ Successfully withdrew ${amount} tokens!`, 'success');
             
-            // Add activity
-            if (typeof addActivity === 'function') {
-                addActivity('Withdrawn', `${amount} tokens`);
-            }
+            // Refresh balances after 3 seconds
+            setTimeout(() => {
+                if (connected) updateBalances();
+            }, 3000);
             
         } else {
-            // Failed
+            // FAILED
             hidePendingOverlay();
             showNotification('Transaction failed on-chain', 'error');
             addTransactionToHistory(tx.transactionHash, amount, recipient, 'failed');
@@ -397,15 +555,27 @@ async function withdrawTokens() {
         
     } catch (error) {
         hidePendingOverlay();
-        console.error('Withdrawal error:', error);
+        console.error('Withdrawal error details:', error);
         
-        if (error.message.includes('rejected')) {
-            showNotification('Transaction rejected by user', 'error');
-        } else if (error.message.includes('gas')) {
-            showNotification('Transaction failed: Out of gas', 'error');
+        let userMessage = 'Withdrawal failed';
+        
+        if (error.code === 4001) {
+            userMessage = 'Transaction rejected by user';
+        } else if (error.message.includes('insufficient funds')) {
+            userMessage = 'Insufficient ETH for gas fees. Get Sepolia ETH from faucet.';
+        } else if (error.message.includes('underpriced')) {
+            userMessage = 'Gas price too low. Try estimating gas again.';
+        } else if (error.message.includes('revert')) {
+            userMessage = 'Transaction reverted. Check your token balance.';
+        } else if (error.message.includes('timeout')) {
+            userMessage = 'Transaction taking too long. Check Etherscan for status.';
+        } else if (error.message.includes('nonce')) {
+            userMessage = 'Nonce error. Please try again in a moment.';
         } else {
-            showNotification('Withdrawal failed: ' + error.message, 'error');
+            userMessage = `Error: ${error.message.substring(0, 100)}`;
         }
+        
+        showNotification(userMessage, 'error');
     }
 }
 
